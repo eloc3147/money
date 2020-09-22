@@ -160,6 +160,7 @@ impl InputFile {
             return None;
         }
 
+        // Take a slice one row's width in len
         Some(&self.rows[(index * self.width)..((index + 1) * self.width)])
     }
 
