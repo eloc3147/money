@@ -5,8 +5,6 @@ authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-csv = "1.1"
-serde = { version = "1.0", features = ["derive"] }
 rocket = "0.4.5"
 rocket_contrib = "0.4.5"
 anyhow = "1.0"
