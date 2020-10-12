@@ -44,6 +44,10 @@ class UploadPage {
 
             var reader = new FileReader();
             reader.onloadend = e => {
+                if (reader == null) {
+                    console.log("Error: reader is null.");
+                    return;
+                }
                 this.session = this.client.load_file(reader);
                 this.draw_preview();
             };
@@ -54,11 +58,13 @@ class UploadPage {
 
     draw_preview() {
         this.preview = new Table();
+        console.log(this.session);
         let row_count = Math.min(10, this.session.get_row_count());
         this.preview.set_contents(
             this.session.get_headers().map(h => {
                 return '"' + h + '"';
             }),
+            this.session.get_header_suggestions(),
             this.session.get_row_slice(0, row_count)
         );
 

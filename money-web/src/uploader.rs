@@ -1,11 +1,36 @@
 use csv;
+use enum_iterator::IntoEnumIterator;
 use js_sys::Array;
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::cast::ToPrimitive;
 use std::io::Cursor;
 use std::iter::{FromIterator, IntoIterator};
 use std::ops::Range;
 use wasm_bindgen::prelude::*;
 
 use super::{MoneyError, MoneyErrorKind};
+
+#[derive(IntoEnumIterator, FromPrimitive, ToPrimitive, PartialEq)]
+enum HeaderOptions {
+    Unused,
+    Date,
+    Name,
+    Description,
+    Amount,
+}
+
+impl HeaderOptions {
+    fn as_str(&self) -> &'static str {
+        match self {
+            HeaderOptions::Unused => "-",
+            HeaderOptions::Date => "Date",
+            HeaderOptions::Name => "Name",
+            HeaderOptions::Description => "Description",
+            HeaderOptions::Amount => "Amount",
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub struct UploadSession {
     file: InputFile,
@@ -14,11 +39,9 @@ pub struct UploadSession {
 #[wasm_bindgen]
 impl UploadSession {
     pub fn from_string(file: String) -> Result<UploadSession, JsValue> {
-        let file = Self::parse_csv(file).map_err(|e| {
-            MoneyError::new(MoneyErrorKind::FileLoadingError, format!("{}", e).into())
-        })?;
-
-        Ok(UploadSession { file })
+        Ok(UploadSession {
+            file: Self::parse_csv(file)?,
+        })
     }
 
     #[wasm_bindgen]
@@ -29,6 +52,38 @@ impl UploadSession {
     #[wasm_bindgen]
     pub fn get_headers(&self) -> Array {
         Array::from_iter(self.file.headers().iter().map(|s| JsValue::from_str(s)))
+    }
+
+    #[wasm_bindgen]
+    pub fn get_header_suggestions(&self) -> Array {
+        let suggestions = self
+            .file
+            .headers()
+            .iter()
+            .map(|h| match h.trim().to_lowercase().as_ref() {
+                "date" => HeaderOptions::Date,
+                "name" => HeaderOptions::Name,
+                "memo" => HeaderOptions::Description,
+                "amount" => HeaderOptions::Amount,
+                _ => HeaderOptions::Unused,
+            })
+            .map(|h| {
+                let options = HeaderOptions::into_enum_iter().map(|o| {
+                    let array = Array::new_with_length(3);
+                    array.set(
+                        0,
+                        JsValue::from_f64(
+                            o.to_f64()
+                                .expect("HeaderOption cannot be represented as f64"),
+                        ),
+                    );
+                    array.set(1, JsValue::from_str(o.as_str()));
+                    array.set(2, JsValue::from_bool(h == o));
+                    array
+                });
+                Array::from_iter(options)
+            });
+        Array::from_iter(suggestions)
     }
 
     #[wasm_bindgen]
@@ -50,13 +105,13 @@ impl UploadSession {
         Ok(rows)
     }
 
-    fn parse_csv(file: String) -> Result<InputFile, csv::Error> {
+    fn parse_csv(file: String) -> Result<InputFile, MoneyError> {
         let mut reader = csv::Reader::from_reader(Cursor::new(file));
 
         let mut input_file = InputFile::from_headers(reader.headers()?.iter());
 
         for row in reader.records() {
-            input_file.push_row(row?.iter());
+            input_file.push_row(row?.iter())?;
         }
 
         Ok(input_file)
@@ -72,7 +127,7 @@ struct InputFile {
 impl InputFile {
     pub fn new(width: usize) -> InputFile {
         InputFile {
-            headers: Vec::new(),
+            headers: Vec::with_capacity(width),
             rows: Vec::new(),
             width,
         }

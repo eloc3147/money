@@ -1,7 +1,6 @@
 mod uploader;
 mod utils;
 
-use std::fmt::Display;
 use wasm_bindgen::prelude::*;
 use web_sys::FileReader;
 

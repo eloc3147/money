@@ -42,8 +42,8 @@ export class Option {
     update(data) {
         this.el.value = data[0];
         this.el.textContent = data[1];
-        if (data[3] === true) {
-            this.el.selected = "";
+        if (data[2] === true) {
+            this.el.selected = "true";
         }
     }
 }
@@ -54,7 +54,6 @@ export class TdDropdown {
         this.el = el("td", this.select);
     }
     update(data) {
-        console.log(data);
         this.select.update(data);
     }
 }
@@ -64,7 +63,7 @@ export class Table {
         this.el = el("table.pure-table-bordered");
     }
 
-    set_contents(headers, rows) {
+    set_contents(headers, suggestions, rows) {
         let row_elements = rows.map(r => {
             let el = new Tr(Td);
             el.update(r);
@@ -72,8 +71,8 @@ export class Table {
         });
 
         let dropdown_element = new Tr(TdDropdown);
-        let contents = new Array(headers.length).fill(["a", "A", false], ["b", "B", false], ["c", "C", true]);
-        dropdown_element.update(contents);
+        console.log(suggestions);
+        dropdown_element.update(suggestions);
         row_elements.unshift(dropdown_element);
 
         let header_element = new Tr(Th);
