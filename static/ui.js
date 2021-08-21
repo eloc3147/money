@@ -84,14 +84,16 @@ class UploadPage {
         setChildren(this.contents, el("div", { class: "column is-full" }, [
             this.title,
             this.subtitle,
+            el("article", { className: "message is-danger" },
+                this.error_label = el("div", { className: "message-body is-hidden" }, "")
+            ),
             this.preview,
             el("div", { className: "field is-grouped" }, [
                 this.submit_wrapper = el("fieldset",
                     el("div.control",
                         this.submit_button = el("button", { class: "button is-link" }, "Load file")
                     )
-                ),
-                this.error_label = el("div", { className: "notification is-danger is-hidden" }, "")
+                )
             ]),
 
         ]));
@@ -111,11 +113,11 @@ class UploadPage {
         let selection_error = this.session.get_selection_error();
         if (selection_error !== undefined) {
             this.error_label.textContent = selection_error;
-            this.error_label.className = "notification is-danger";
+            this.error_label.className = "message-body";
             this.submit_wrapper.setAttribute("disabled", true);
         } else {
             this.error_label.textContent = "";
-            this.error_label.className = "notification is-danger is-hidden";
+            this.error_label.className = "message-body is-hidden";
             this.submit_wrapper.removeAttribute("disabled");
         }
     }
