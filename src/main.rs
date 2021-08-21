@@ -1,13 +1,9 @@
-use anyhow::Result;
-use rocket::config::{Config, Environment};
-use rocket_contrib::serve::StaticFiles;
+#[macro_use]
+extern crate rocket;
 
-fn rocket() -> Result<rocket::Rocket> {
-    let config = Config::build(Environment::Staging).port(9234).finalize()?;
+use rocket::fs::FileServer;
 
-    Ok(rocket::custom(config).mount("/", StaticFiles::from("static")))
-}
-
-fn main() -> Result<()> {
-    Err(rocket()?.launch().into())
+#[launch]
+fn rocket() -> _ {
+    rocket::build().mount("/", FileServer::from("static"))
 }

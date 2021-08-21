@@ -1,17 +1,44 @@
 use csv;
 use enum_iterator::IntoEnumIterator;
 use js_sys::Array;
-use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::cast::ToPrimitive;
 use std::io::Cursor;
-use std::iter::{FromIterator, IntoIterator};
+use std::iter::IntoIterator;
 use std::ops::Range;
 use wasm_bindgen::prelude::*;
 
 use super::{MoneyError, MoneyErrorKind};
 
-#[derive(IntoEnumIterator, FromPrimitive, ToPrimitive, PartialEq)]
-enum HeaderOptions {
+const REQUIRED_FIELDS: &[HeaderOption] = &[
+    HeaderOption::Date,
+    HeaderOption::Description,
+    HeaderOption::Amount,
+];
+
+// Hack because there's no official repitition count in std
+macro_rules! replace_expr {
+    ($_t:tt $sub:expr) => {
+        $sub
+    };
+}
+
+macro_rules! js_array {
+    [$($item:expr),+] => {
+        #[allow(unused_assignments)]
+        {
+            let size = <[()]>::len(&[$(replace_expr!(($item) ())),*]);
+            let array = Array::new_with_length(size as u32);
+            let mut idx = 0u32;
+            $(
+                array.set(idx, $item);
+                idx += 1u32;
+            )*
+            array
+        }
+    }
+}
+
+#[derive(Clone, IntoEnumIterator, PartialEq, Copy)]
+enum HeaderOption {
     Unused,
     Date,
     Name,
@@ -19,14 +46,24 @@ enum HeaderOptions {
     Amount,
 }
 
-impl HeaderOptions {
+impl HeaderOption {
     fn as_str(&self) -> &'static str {
         match self {
-            HeaderOptions::Unused => "-",
-            HeaderOptions::Date => "Date",
-            HeaderOptions::Name => "Name",
-            HeaderOptions::Description => "Description",
-            HeaderOptions::Amount => "Amount",
+            HeaderOption::Unused => "-",
+            HeaderOption::Date => "Date",
+            HeaderOption::Name => "Name",
+            HeaderOption::Description => "Description",
+            HeaderOption::Amount => "Amount",
+        }
+    }
+
+    fn from_str(string: &str) -> HeaderOption {
+        match string.trim().to_lowercase().as_ref() {
+            "date" => HeaderOption::Date,
+            "name" => HeaderOption::Name,
+            "memo" | "description" => HeaderOption::Description,
+            "amount" => HeaderOption::Amount,
+            _ => HeaderOption::Unused,
         }
     }
 }
@@ -34,13 +71,17 @@ impl HeaderOptions {
 #[wasm_bindgen]
 pub struct UploadSession {
     file: InputFile,
+    header_selections: Vec<HeaderOption>,
 }
 
 #[wasm_bindgen]
 impl UploadSession {
     pub fn from_string(file: String) -> Result<UploadSession, JsValue> {
+        let file = Self::parse_csv(file)?;
+        let header_selections = file.header_suggestions().collect();
         Ok(UploadSession {
-            file: Self::parse_csv(file)?,
+            file,
+            header_selections,
         })
     }
 
@@ -51,39 +92,28 @@ impl UploadSession {
 
     #[wasm_bindgen]
     pub fn get_headers(&self) -> Array {
-        Array::from_iter(self.file.headers().iter().map(|s| JsValue::from_str(s)))
+        self.file
+            .headers()
+            .iter()
+            .map(|s| JsValue::from_str(s))
+            .collect()
     }
 
     #[wasm_bindgen]
     pub fn get_header_suggestions(&self) -> Array {
-        let suggestions = self
-            .file
-            .headers()
-            .iter()
-            .map(|h| match h.trim().to_lowercase().as_ref() {
-                "date" => HeaderOptions::Date,
-                "name" => HeaderOptions::Name,
-                "memo" => HeaderOptions::Description,
-                "amount" => HeaderOptions::Amount,
-                _ => HeaderOptions::Unused,
+        self.file
+            .header_suggestions()
+            .map(|suggestion| {
+                HeaderOption::into_enum_iter()
+                    .map(|option| {
+                        js_array![
+                            JsValue::from_str(option.as_str()),
+                            JsValue::from_bool(suggestion == option)
+                        ]
+                    })
+                    .collect::<Array>()
             })
-            .map(|h| {
-                let options = HeaderOptions::into_enum_iter().map(|o| {
-                    let array = Array::new_with_length(3);
-                    array.set(
-                        0,
-                        JsValue::from_f64(
-                            o.to_f64()
-                                .expect("HeaderOption cannot be represented as f64"),
-                        ),
-                    );
-                    array.set(1, JsValue::from_str(o.as_str()));
-                    array.set(2, JsValue::from_bool(h == o));
-                    array
-                });
-                Array::from_iter(options)
-            });
-        Array::from_iter(suggestions)
+            .collect()
     }
 
     #[wasm_bindgen]
@@ -96,13 +126,72 @@ impl UploadSession {
             .into());
         }
 
-        let rows = Array::from_iter(
-            self.file
-                .iter_rows(index..(index + length))?
-                .map(|r| Array::from_iter(r.iter().map(|s| JsValue::from_str(s)))),
-        );
+        let rows = self
+            .file
+            .iter_rows(index..(index + length))?
+            .map(|r| r.iter().map(|s| JsValue::from_str(s)).collect::<Array>())
+            .collect();
 
         Ok(rows)
+    }
+
+    #[wasm_bindgen]
+    pub fn update_header_selection(
+        &mut self,
+        column_index: usize,
+        selection: String,
+    ) -> Result<(), JsValue> {
+        if column_index > self.header_selections.len() {
+            return Err(MoneyError::new(
+                MoneyErrorKind::OutOfBounds,
+                format!(
+                    "Column index {} greater than length {}",
+                    column_index,
+                    self.header_selections.len()
+                )
+                .into(),
+            )
+            .into());
+        }
+
+        self.header_selections[column_index] = HeaderOption::from_str(&selection);
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn get_selection_error(&self) -> Option<String> {
+        let missing_fields: Vec<&str> = REQUIRED_FIELDS
+            .iter()
+            .filter_map(|field| {
+                if !self.header_selections.contains(&field) {
+                    return Some(field.as_str());
+                }
+                None
+            })
+            .collect();
+
+        if missing_fields.len() > 0 {
+            return Some(format!("Missing required fields: {}.", missing_fields.join(", ")).into());
+        }
+
+        let mut used_fields: Vec<HeaderOption> = self
+            .header_selections
+            .iter()
+            .filter_map(|o| {
+                if *o != HeaderOption::Unused {
+                    return Some(*o);
+                }
+                None
+            })
+            .collect();
+
+        let (_, duplicates) = used_fields.partition_dedup();
+        if duplicates.len() > 0 {
+            let dup_strings: Vec<&str> = duplicates.iter().map(|o| o.as_str()).collect();
+            return Some(format!("Duplicated fields: {}.", dup_strings.join(", ")).into());
+        }
+
+        None
     }
 
     fn parse_csv(file: String) -> Result<InputFile, MoneyError> {
@@ -236,6 +325,10 @@ impl InputFile {
 
     pub fn headers(&self) -> &[String] {
         &self.headers[..]
+    }
+
+    pub fn header_suggestions(&self) -> impl Iterator<Item = HeaderOption> + '_ {
+        self.headers.iter().map(|h| HeaderOption::from_str(&h))
     }
 
     pub fn width(&self) -> usize {

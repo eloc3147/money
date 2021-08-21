@@ -1,3 +1,5 @@
+#![feature(slice_partition_dedup)]
+
 mod uploader;
 mod utils;
 
@@ -5,12 +7,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::FileReader;
 
 use uploader::UploadSession;
-
-// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
-// allocator.
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+use utils::set_panic_hook;
 
 #[wasm_bindgen]
 pub struct Money {}
@@ -19,6 +16,7 @@ pub struct Money {}
 impl Money {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Money {
+        set_panic_hook();
         Money {}
     }
 
@@ -50,9 +48,19 @@ impl MoneyError {
     }
 }
 
+impl From<csv::Error> for MoneyError {
+    fn from(error: csv::Error) -> MoneyError {
+        MoneyError {
+            kind: MoneyErrorKind::FileLoadingError,
+            msg: format!("{:?}", error).into(),
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub enum MoneyErrorKind {
     FileLoadingError,
     OutOfBounds,
     RowWidthMismatch,
+    UnexpectedFailure,
 }

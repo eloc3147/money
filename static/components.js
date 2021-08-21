@@ -29,9 +29,8 @@ export class Tr {
         this.el = el("tr");
         this.list = list(this.el, type);
     }
-    update(data) {
-        console.log(data);
-        this.list.update(data);
+    update(data, index, items, context) {
+        this.list.update(data, index, items, context);
     }
 }
 
@@ -39,10 +38,10 @@ export class Option {
     constructor(type) {
         this.el = el("option");
     }
-    update(data) {
-        this.el.value = data[0];
-        this.el.textContent = data[1];
-        if (data[2] === true) {
+    update(data, index) {
+        this.el.value = index;
+        this.el.textContent = data[0];
+        if (data[1] === true) {
             this.el.selected = "true";
         }
     }
@@ -50,20 +49,39 @@ export class Option {
 
 export class TdDropdown {
     constructor() {
+        this.column_index = null;
+        this.callback = null;
+
         this.select = list("select", Option);
-        this.el = el("td", this.select);
+        this.select.el.onchange = (evt) => {
+            this.push_selection();
+        };
+
+        this.el = el("td", el("div.select", this.select));
     }
-    update(data) {
+
+    push_selection() {
+        var index = this.select.el.selectedIndex;
+        var input_text = this.select.el.children[index].innerHTML.trim();
+
+        if (this.callback != null) {
+            this.callback(this.column_index, input_text);
+        }
+    }
+
+    update(data, index, _, context) {
+        this.column_index = index;
+        this.callback = context.callback;
         this.select.update(data);
     }
 }
 
 export class Table {
     constructor() {
-        this.el = el("table.pure-table-bordered");
+        this.el = el("table.table");
     }
 
-    set_contents(headers, suggestions, rows) {
+    set_contents(headers, suggestions, rows, column_callback) {
         let row_elements = rows.map(r => {
             let el = new Tr(Td);
             el.update(r);
@@ -71,12 +89,15 @@ export class Table {
         });
 
         let dropdown_element = new Tr(TdDropdown);
-        console.log(suggestions);
-        dropdown_element.update(suggestions);
+        dropdown_element.update(suggestions, {
+            callback: column_callback
+        });
         row_elements.unshift(dropdown_element);
 
-        let header_element = new Tr(Th);
-        header_element.update(headers);
+        let header_row = new Tr(Th);
+        header_row.update(headers);
+
+        let header_element = el("thead", header_row);
         row_elements.unshift(header_element);
 
         setChildren(this.el, row_elements);
