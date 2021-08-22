@@ -1,7 +1,7 @@
 /*jshint esversion: 6 */
 
-import { el } from "https://redom.js.org/redom.es.min.js";
-import { Table } from "/table.js";
+import { el, setChildren } from "https://redom.js.org/redom.es.min.js";
+import { Table, ColumnView } from "/components.js";
 
 
 export class UploadPage {
@@ -13,34 +13,30 @@ export class UploadPage {
         this.error_label = null;
         this.submit_wrapper = null;
 
-        this.el = el("div.container",
-            this.contents = el("div", { class: "columns is-mobile is-centered" },
-                el("div", { class: "column is-half" }, [
-                    this.title = el("p", { class: "title is-1" }, "Add Transactions"),
-                    this.subtitle = el("p", { class: "subtitle is-3" }, "Select a file"),
-                    el("div.field", [
-                        el("label.label", "File upload"),
-                        el("div.control", this.file_field = el("input.input", { type: "file" }))
-                    ]),
-                    el("div.field",
-                        el("div.control", this.load_button = el("button", { class: "button is-link" }, "Load file"))
-                    )
-                ])
+        this.el = new ColumnView("is-half", [
+            this.title = el("p", { class: "title is-1" }, "Add Transactions"),
+            this.subtitle = el("p", { class: "subtitle is-3" }, "Select a file"),
+            el("div.field", [
+                el("label.label", "File upload"),
+                el("div.control", this.file_field = el("input.input", { type: "file" }))
+            ]),
+            el("div.field",
+                el("div.control", this.load_button = el("button", { class: "button is-link" }, "Load file"))
             )
-        );
+        ]);
 
         this.load_button.onclick = evt => {
             evt.preventDefault();
 
             var reader = new FileReader();
-            reader.onloadend = e => {
+            reader.onloadend = _evt => {
                 if (reader == null) {
                     console.log("Error: reader is null.");
                     return;
                 }
+
                 this.session = this.client.load_file(reader);
                 this.draw_preview();
-
             };
 
             reader.readAsText(this.file_field.files[0]);
@@ -64,7 +60,8 @@ export class UploadPage {
 
         this.subtitle.innerText = "Select the types of each column";
 
-        setChildren(this.contents, el("div", { class: "column is-full" }, [
+        this.el.set_column_args("is-full");
+        this.el.set_contents([
             this.title,
             this.subtitle,
             el("article", { className: "message is-danger" },
@@ -78,12 +75,14 @@ export class UploadPage {
                     )
                 )
             ]),
-
-        ]));
+        ]);
 
         this.submit_button.onclick = evt => {
             evt.preventDefault();
-
+            if (this.session.get_selection_error() === undefined) {
+                // this.session.submit_data();
+                this.draw_submitted();
+            }
         };
 
         this.file_field = null;
@@ -103,5 +102,18 @@ export class UploadPage {
             this.error_label.className = "message-body is-hidden";
             this.submit_wrapper.removeAttribute("disabled");
         }
+    }
+
+    draw_submitted() {
+        this.error_label.textContent = "Data submitted.";
+        this.error_label.className = "message-body";
+
+        this.el.set_contents([
+            this.title,
+            el("article", { className: "message is-primary is-large" }, [
+                el("div.message-header", "Upload complete"),
+                el("div.message-body", "You can now return to the home page")
+            ])
+        ]);
     }
 }

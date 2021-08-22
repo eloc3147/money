@@ -42,7 +42,7 @@ class MoneyApp {
                 el("div.navbar-brand", el("span.navbar-item", "Money")),
                 el("div.navbar-menu", el("div.navbar-start", this.pages))
             ]),
-            this.content = el("section.section")
+            this.content = el("div.container")
         ]);
 
         this.select(this.pages[0].name);

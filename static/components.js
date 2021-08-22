@@ -98,5 +98,20 @@ export class Table {
 
         setChildren(this.el, row_elements);
     }
+}
 
+export class ColumnView {
+    constructor(column_args, contents) {
+        this.el = el("div", { class: "columns is-mobile is-centered" },
+            this.column = el("div", { class: "column " + column_args }, contents)
+        );
+    }
+
+    set_column_args(args) {
+        this.column.className = "column " + args;
+    }
+
+    set_contents(contents) {
+        setChildren(this.column, contents);
+    }
 }
