@@ -1,10 +1,6 @@
 /*jshint esversion: 6 */
 
-import {
-    el,
-    list,
-    setChildren
-} from "https://redom.js.org/redom.es.min.js";
+import { el, list, setChildren } from "https://redom.js.org/redom.es.min.js";
 
 export class Th {
     constructor() {
