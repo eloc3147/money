@@ -1,7 +1,7 @@
 /*jshint esversion: 6 */
 
 import { el, mount, unmount } from "https://redom.js.org/redom.es.min.js";
-import init, { Money } from "/money_web.js";
+import init, { Money } from "/client/money_web.js";
 import { UploadPage } from "/upload_page.js";
 import { HomePage } from "/home_page.js";
 

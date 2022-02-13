@@ -1,5 +1,6 @@
 #![feature(slice_partition_dedup)]
 
+mod backend;
 mod uploader;
 mod utils;
 
@@ -63,4 +64,5 @@ pub enum MoneyErrorKind {
     OutOfBounds,
     RowWidthMismatch,
     UnexpectedFailure,
+    EncodingError,
 }

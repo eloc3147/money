@@ -8,6 +8,8 @@ use wasm_bindgen::prelude::*;
 
 use super::{MoneyError, MoneyErrorKind};
 
+use crate::backend::Backend;
+
 const REQUIRED_FIELDS: &[HeaderOption] = &[
     HeaderOption::Date,
     HeaderOption::Description,
@@ -192,6 +194,11 @@ impl UploadSession {
         }
 
         None
+    }
+
+    #[wasm_bindgen]
+    pub async fn submit_data(self) -> Result<(), JsValue> {
+        Backend::submit_data(self.file.headers, self.file.rows, self.file.width).await
     }
 
     fn parse_csv(file: String) -> Result<InputFile, MoneyError> {

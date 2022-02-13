@@ -1,6 +1,6 @@
 /*jshint esversion: 6 */
 
-import { el, setChildren } from "https://redom.js.org/redom.es.min.js";
+import { el } from "https://redom.js.org/redom.es.min.js";
 import { Table, ColumnView } from "/components.js";
 
 
@@ -80,7 +80,7 @@ export class UploadPage {
         this.submit_button.onclick = evt => {
             evt.preventDefault();
             if (this.session.get_selection_error() === undefined) {
-                // this.session.submit_data();
+                this.session.submit_data();
                 this.draw_submitted();
             }
         };
