@@ -74,29 +74,32 @@ export class TdDropdown {
 
 export class Table {
     constructor() {
-        this.el = el("table.table");
+        this.header_row = new Tr(Th);
+        this.dropdown_element = new Tr(TdDropdown);
+
+        this.rows = [
+            el("thead", this.header_row),
+            this.dropdown_element,
+        ];
+
+        this.el = el("table.table", this.rows);
     }
 
-    set_contents(headers, suggestions, rows, column_callback) {
-        let row_elements = rows.map(r => {
+    set_headers(headers) {
+        this.header_row.update(headers);
+    }
+
+    set_suggestions(suggestions, column_callback) {
+        this.dropdown_element.update(suggestions, { callback: column_callback });
+    }
+
+    add_rows(rows) {
+        for (let row in rows) {
             let el = new Tr(Td);
-            el.update(r);
-            return el;
-        });
-
-        let dropdown_element = new Tr(TdDropdown);
-        dropdown_element.update(suggestions, {
-            callback: column_callback
-        });
-        row_elements.unshift(dropdown_element);
-
-        let header_row = new Tr(Th);
-        header_row.update(headers);
-
-        let header_element = el("thead", header_row);
-        row_elements.unshift(header_element);
-
-        setChildren(this.el, row_elements);
+            el.update(rows[row]);
+            this.rows.push(el);
+        }
+        setChildren(this.el, this.rows);
     }
 }
 

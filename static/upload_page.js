@@ -9,9 +9,12 @@ export class UploadPage {
         this.client = args.client;
         this.session = null;
         this.preview = null;
+        this.current_row_count = 0;
+        this.show_more_button = null;
+        this.show_more_wrapper = null;
         this.submit_button = null;
-        this.error_label = null;
         this.submit_wrapper = null;
+        this.error_label = null;
 
         this.el = new ColumnView("is-half", [
             this.title = el("p", { class: "title is-1" }, "Add Transactions"),
@@ -44,18 +47,11 @@ export class UploadPage {
     }
 
     draw_preview() {
-        let row_count = Math.min(10, this.session.get_row_count());
-
         this.preview = new Table();
-        this.preview.set_contents(
-            this.session.get_headers().map(h => {
-                return '"' + h + '"';
-            }),
+        this.preview.set_headers(this.session.get_headers().map(h => '"' + h + '"'));
+        this.preview.set_suggestions(
             this.session.get_header_suggestions(),
-            this.session.get_row_slice(0, row_count),
-            (column_index, selection) => {
-                this.process_update(column_index, selection);
-            }
+            (column_index, selection) => this.process_update(column_index, selection)
         );
 
         this.subtitle.innerText = "Select the types of each column";
@@ -69,6 +65,11 @@ export class UploadPage {
             ),
             this.preview,
             el("div", { className: "field is-grouped" }, [
+                this.show_more_wrapper = el("fieldset",
+                    el("div.control",
+                        this.show_more_button = el("button", { class: "button" }, "Show More")
+                    )
+                ),
                 this.submit_wrapper = el("fieldset",
                     el("div.control",
                         this.submit_button = el("button", { class: "button is-link" }, "Load file")
@@ -76,6 +77,11 @@ export class UploadPage {
                 )
             ]),
         ]);
+
+        this.show_more_button.onclick = evt => {
+            evt.preventDefault();
+            this.add_rows();
+        };
 
         this.submit_button.onclick = evt => {
             evt.preventDefault();
@@ -87,6 +93,23 @@ export class UploadPage {
 
         this.file_field = null;
         this.load_button = null;
+
+        this.add_rows();
+    }
+
+    add_rows() {
+        let total_row_count = this.session.get_row_count();
+        let remaining_rows = Math.max(0, total_row_count - this.current_row_count);
+        let row_count = Math.min(10, remaining_rows);
+        console.log("Getting rows", this.current_row_count, this.current_row_count + row_count);
+        this.preview.add_rows(
+            this.session.get_row_slice(this.current_row_count, this.current_row_count + row_count)
+        );
+        this.current_row_count += row_count;
+
+        if (this.current_row_count == total_row_count) {
+            this.show_more_wrapper.setAttribute("disabled", true);
+        }
     }
 
     process_update(column_index, selection) {
