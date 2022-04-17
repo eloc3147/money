@@ -148,6 +148,7 @@ dependencies = [
  "enum-iterator",
  "js-sys",
  "log",
+ "serde",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",

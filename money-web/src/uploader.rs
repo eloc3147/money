@@ -198,7 +198,7 @@ impl UploadSession {
 
     #[wasm_bindgen]
     pub async fn submit_data(self) -> Result<(), JsValue> {
-        Backend::submit_data(self.file.headers, self.file.rows, self.file.width).await
+        Backend::add_transactions(self.file.headers, self.file.rows, self.file.width).await
     }
 
     fn parse_csv(file: String) -> Result<InputFile, MoneyError> {
