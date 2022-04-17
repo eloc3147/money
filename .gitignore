@@ -1,2 +1,4 @@
 /target
-/static/client/
+/static/web.js
+/static/web.js.map
+/static/money_web_bg.wasm

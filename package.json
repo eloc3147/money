@@ -1,0 +1,9 @@
+{
+  "devDependencies": {
+    "@swc/cli": "^0.1.57",
+    "@swc/core": "^1.2.165"
+  },
+  "dependencies": {
+    "redom": "^3.27.3"
+  }
+}

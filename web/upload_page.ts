@@ -1,32 +1,63 @@
-/*jshint esversion: 6 */
+import { el } from "redom";
+import { Money, UploadSession } from "../money-web/pkg/money_web";
+import { Table, ColumnView } from "./components";
+import { Page } from "./page";
 
-import { el } from "https://redom.js.org/redom.es.min.js";
-import { Table, ColumnView } from "/components.js";
 
+export class UploadPage implements Page {
+    client: Money;
+    session: UploadSession;
+    current_row_count: number;
+    preview: Table;
 
-export class UploadPage {
-    constructor(args) {
-        this.client = args.client;
+    title: HTMLParagraphElement;
+    subtitle: HTMLParagraphElement;
+
+    input_field: HTMLDivElement;
+    load_field: HTMLDivElement;
+
+    file_field: HTMLInputElement;
+    load_button: HTMLButtonElement;
+    error_label: HTMLDivElement;
+    show_more_wrapper: HTMLFieldSetElement;
+    submit_wrapper: HTMLFieldSetElement;
+    show_more_button: HTMLButtonElement;
+    submit_button: HTMLButtonElement;
+
+    el: ColumnView;
+
+    constructor(client: Money) {
+        this.client = client;
         this.session = null;
         this.preview = null;
         this.current_row_count = 0;
+
+        this.title = null;
+        this.subtitle = null;
+        this.input_field = null;
+        this.load_field = null;
+
         this.show_more_button = null;
         this.show_more_wrapper = null;
         this.submit_button = null;
         this.submit_wrapper = null;
         this.error_label = null;
 
-        this.el = new ColumnView("is-half", [
-            this.title = el("p", { class: "title is-1" }, "Add Transactions"),
-            this.subtitle = el("p", { class: "subtitle is-3" }, "Select a file"),
-            el("div.field", [
-                el("label.label", "File upload"),
-                el("div.control", this.file_field = el("input.input", { type: "file" }))
-            ]),
-            el("div.field",
-                el("div.control", this.load_button = el("button", { class: "button is-link" }, "Load file"))
-            )
+        this.el = new ColumnView("is-half");
+    }
+
+    onmount() {
+        this.title = el("p", { class: "title is-1" }, "Add Transactions");
+        this.subtitle = el("p", { class: "subtitle is-3" }, "Select a file");
+        this.input_field = el("div", { class: "field" }, [
+            el("label.label", "File upload"),
+            el("div.control", this.file_field = el("input", { type: "file", class: "input" }))
         ]);
+        this.load_field = el(
+            "div",
+            { class: "field" },
+            el("div.control", this.load_button = el("button", { class: "button is-link" }, "Load file"))
+        );
 
         this.load_button.onclick = evt => {
             evt.preventDefault();
@@ -44,6 +75,22 @@ export class UploadPage {
 
             reader.readAsText(this.file_field.files[0]);
         };
+
+        this.el.set_contents([
+            this.title,
+            this.subtitle,
+            this.input_field,
+            this.load_field
+        ]);
+    }
+
+    onremount() {
+        this.el.set_contents([
+            this.title,
+            this.subtitle,
+            this.input_field,
+            this.load_field
+        ]);
     }
 
     draw_preview() {
@@ -108,18 +155,18 @@ export class UploadPage {
         this.current_row_count += row_count;
 
         if (this.current_row_count == total_row_count) {
-            this.show_more_wrapper.setAttribute("disabled", true);
+            this.show_more_wrapper.setAttribute("disabled", "true");
         }
     }
 
-    process_update(column_index, selection) {
+    process_update(column_index: number, selection: string) {
         this.session.update_header_selection(column_index, selection);
 
         let selection_error = this.session.get_selection_error();
         if (selection_error !== undefined) {
             this.error_label.textContent = selection_error;
             this.error_label.className = "message-body";
-            this.submit_wrapper.setAttribute("disabled", true);
+            this.submit_wrapper.setAttribute("disabled", "true");
         } else {
             this.error_label.textContent = "";
             this.error_label.className = "message-body is-hidden";
