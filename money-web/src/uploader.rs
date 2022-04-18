@@ -89,7 +89,7 @@ impl UploadSession {
 
     #[wasm_bindgen]
     pub fn get_row_count(&self) -> JsValue {
-        JsValue::from_f64(self.file.rows.len() as f64)
+        JsValue::from_f64(self.file.row_count() as f64)
     }
 
     #[wasm_bindgen]
@@ -128,7 +128,7 @@ impl UploadSession {
 
     #[wasm_bindgen]
     pub fn get_row_slice(&self, index: usize, length: usize) -> Result<Array, MoneyError> {
-        let height = self.file.height();
+        let height = self.file.row_count();
         if index + length > height {
             return Err(MoneyError::new(
                 MoneyErrorKind::OutOfBounds,
@@ -209,7 +209,7 @@ impl UploadSession {
 
     #[wasm_bindgen]
     pub async fn submit_data(self) -> Result<(), JsValue> {
-        Backend::add_transactions(self.file.headers, self.file.rows, self.file.width).await
+        Backend::add_transactions(self.file.headers, self.file.cells, self.file.width).await
     }
 
     fn parse_csv(file: String) -> Result<InputFile, MoneyError> {
@@ -227,7 +227,7 @@ impl UploadSession {
 
 struct InputFile {
     headers: Vec<String>,
-    rows: Vec<String>,
+    cells: Vec<String>,
     width: usize,
 }
 
@@ -235,7 +235,7 @@ impl InputFile {
     pub fn new(width: usize) -> InputFile {
         InputFile {
             headers: Vec::with_capacity(width),
-            rows: Vec::new(),
+            cells: Vec::new(),
             width,
         }
     }
@@ -247,11 +247,11 @@ impl InputFile {
     {
         let headers: Vec<String> = headers.into_iter().map(|s| s.as_ref().to_owned()).collect();
         let width = headers.len();
-        let rows = Vec::new();
+        let cells = Vec::new();
 
         InputFile {
             headers,
-            rows,
+            cells,
             width,
         }
     }
@@ -291,8 +291,8 @@ impl InputFile {
         R: IntoIterator,
         R::Item: AsRef<str>,
     {
-        self.rows.reserve(self.width);
-        let starting_len = self.rows.len();
+        self.cells.reserve(self.width);
+        let starting_len = self.cells.len();
 
         let mut counter = 0usize;
         for cell in row.into_iter() {
@@ -302,11 +302,11 @@ impl InputFile {
                 break;
             }
 
-            self.rows.push(cell.as_ref().to_owned());
+            self.cells.push(cell.as_ref().to_owned());
         }
 
         if counter != self.width {
-            self.rows.truncate(starting_len);
+            self.cells.truncate(starting_len);
 
             return Err(MoneyError::new(
                 MoneyErrorKind::RowWidthMismatch,
@@ -318,16 +318,16 @@ impl InputFile {
     }
 
     pub fn get_row(&self, index: usize) -> Option<&[String]> {
-        if index >= self.height() {
+        if index >= self.row_count() {
             return None;
         }
 
         // Take a slice one row's width in len
-        Some(&self.rows[(index * self.width)..((index + 1) * self.width)])
+        Some(&self.cells[(index * self.width)..((index + 1) * self.width)])
     }
 
     pub fn iter_rows(&self, index: Range<usize>) -> Result<RowsIter, MoneyError> {
-        if index.end > self.height() {
+        if index.end > self.row_count() {
             return Err(MoneyError::new(
                 MoneyErrorKind::OutOfBounds,
                 "The selected index is out of bounds".into(),
@@ -353,8 +353,8 @@ impl InputFile {
         self.width
     }
 
-    pub fn height(&self) -> usize {
-        self.rows.len() / self.width
+    pub fn row_count(&self) -> usize {
+        self.cells.len() / self.width
     }
 }
 
