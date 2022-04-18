@@ -190,9 +190,9 @@ class UploadPreview implements RedomComponent {
         let row_count = Math.min(10, remaining_rows);
 
         if (row_count > 0) {
-            console.log("Getting rows", this.current_row_count, this.current_row_count + row_count);
+            console.log("Getting rows", this.current_row_count, row_count);
             this.table.add_rows(
-                this.session.get_row_slice(this.current_row_count, this.current_row_count + row_count)
+                this.session.get_row_slice(this.current_row_count, row_count)
             );
             this.current_row_count += row_count;
         }
