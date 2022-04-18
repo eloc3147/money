@@ -83,9 +83,6 @@ export class UploadPage implements Page {
     }
 
     draw_submitted() {
-        this.error_label.textContent = "Data submitted.";
-        this.error_label.className = "message-body";
-
         this.el.set_contents([
             this.title,
             new UploadSubmitted()
@@ -209,7 +206,6 @@ class UploadPreview implements RedomComponent {
 
     check_error(): boolean {
         let selection_error = this.session.get_selection_error();
-        console.log("selection error", selection_error);
         if (selection_error !== undefined) {
             this.error_label.textContent = selection_error;
             this.error_label.className = "message-body";
