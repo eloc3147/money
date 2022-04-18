@@ -4,6 +4,7 @@ mod backend;
 mod uploader;
 mod utils;
 
+use js_sys::Error;
 use wasm_bindgen::prelude::*;
 use web_sys::FileReader;
 
@@ -22,7 +23,7 @@ impl Money {
     }
 
     #[wasm_bindgen]
-    pub fn load_file(self, file_reader: FileReader) -> Result<UploadSession, JsValue> {
+    pub fn load_file(self, file_reader: FileReader) -> Result<UploadSession, MoneyError> {
         file_reader
             .result()
             .map_err(|e| {
@@ -37,7 +38,6 @@ impl Money {
     }
 }
 
-#[wasm_bindgen]
 pub struct MoneyError {
     kind: MoneyErrorKind,
     msg: String,
@@ -58,11 +58,28 @@ impl From<csv::Error> for MoneyError {
     }
 }
 
-#[wasm_bindgen]
+impl From<MoneyError> for JsValue {
+    fn from(error: MoneyError) -> JsValue {
+        Error::new(&format!("{}\n{}", error.kind.as_str(), error.msg)).into()
+    }
+}
+
 pub enum MoneyErrorKind {
     FileLoadingError,
     OutOfBounds,
     RowWidthMismatch,
     UnexpectedFailure,
     EncodingError,
+}
+
+impl MoneyErrorKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            MoneyErrorKind::FileLoadingError => "FileLoadingError",
+            MoneyErrorKind::OutOfBounds => "OutOfBounds",
+            MoneyErrorKind::RowWidthMismatch => "RowWidthMismatch",
+            MoneyErrorKind::UnexpectedFailure => "UnexpectedFailure",
+            MoneyErrorKind::EncodingError => "EncodingError",
+        }
+    }
 }

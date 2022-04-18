@@ -6,7 +6,8 @@ export class Th implements RedomComponent {
     constructor() {
         this.el = el("th");
     }
-    update(data: string) {
+
+    update(data: string): void {
         this.el.textContent = data;
     }
 }
@@ -17,7 +18,8 @@ export class Td implements RedomComponent {
     constructor() {
         this.el = el("td");
     }
-    update(data: string) {
+
+    update(data: string): void {
         this.el.textContent = data;
     }
 }
@@ -30,14 +32,10 @@ export class Tr implements RedomComponent {
         this.el = el("tr");
         this.list = list(this.el, type);
     }
-    update(data: any[], contents?: any) {
+
+    update(data: any[], contents?: any): void {
         this.list.update(data, contents);
     }
-}
-
-interface OptionConfig {
-    cell_value: string;
-    selected: boolean;
 }
 
 export class Option implements RedomComponent {
@@ -46,10 +44,11 @@ export class Option implements RedomComponent {
     constructor() {
         this.el = el("option");
     }
-    update(item: OptionConfig, index: number, _data: any, _context?: any) {
+
+    update(item: Map<string, any>, index: number, _data: any, _context?: any): void {
         this.el.value = index.toString();
-        this.el.textContent = item.cell_value;
-        this.el.selected = item.selected;
+        this.el.textContent = item.get("cell_value");
+        this.el.selected = item.get("selected");
     }
 }
 
@@ -71,7 +70,7 @@ export class TdDropdown implements RedomComponent {
         this.el = el("td", el("div.select", this.select));
     }
 
-    push_selection() {
+    push_selection(): void {
         var index = (this.select.el as HTMLSelectElement).selectedIndex;
         var input_text = this.select.el.children[index].innerHTML.trim();
 
@@ -80,7 +79,7 @@ export class TdDropdown implements RedomComponent {
         }
     }
 
-    update(item: any, index: number, _data: any, context?: any) {
+    update(item: Map<string, any>[], index: number, _data: any, context?: any): void {
         this.column_index = index;
         this.callback = context.callback;
         this.select.update(item);
@@ -105,15 +104,15 @@ export class Table implements RedomComponent {
         this.el = el("table", this.rows, { class: "table" });
     }
 
-    set_headers(headers: string[]) {
+    set_headers(headers: string[]): void {
         this.header_row.update(headers);
     }
 
-    set_suggestions(suggestions: string[], column_callback: (column_index: number, input_text: string) => void) {
+    set_suggestions(suggestions: Map<string, any>[][], column_callback: (column_index: number, input_text: string) => void): void {
         this.dropdown_element.update(suggestions, { callback: column_callback });
     }
 
-    add_rows(rows: any[][]) {
+    add_rows(rows: any[][]): void {
         for (let row in rows) {
             let el = new Tr(Td);
             el.update(rows[row]);
@@ -133,11 +132,11 @@ export class ColumnView implements RedomComponent {
         );
     }
 
-    set_column_args(args: string) {
+    set_column_args(args: string): void {
         this.column.className = "column " + args;
     }
 
-    set_contents(contents: HTMLElement[] | RedomElement[]) {
+    set_contents(contents: HTMLElement[] | RedomElement[]): void {
         setChildren(this.column, contents);
     }
 }

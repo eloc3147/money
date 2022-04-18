@@ -1,6 +1,6 @@
 use csv;
 use enum_iterator::IntoEnumIterator;
-use js_sys::Array;
+use js_sys::{Array, JsString, Map};
 use std::io::Cursor;
 use std::iter::IntoIterator;
 use std::ops::Range;
@@ -78,7 +78,7 @@ pub struct UploadSession {
 
 #[wasm_bindgen]
 impl UploadSession {
-    pub fn from_string(file: String) -> Result<UploadSession, JsValue> {
+    pub fn from_string(file: String) -> Result<UploadSession, MoneyError> {
         let file = Self::parse_csv(file)?;
         let header_selections = file.header_suggestions().collect();
         Ok(UploadSession {
@@ -103,15 +103,23 @@ impl UploadSession {
 
     #[wasm_bindgen]
     pub fn get_header_suggestions(&self) -> Array {
+        let cell_val_key = JsValue::from_str("cell_value");
+        let cell_selected_key = JsValue::from_str("selected");
+
+        let header_mapping: Vec<(HeaderOption, JsString)> = HeaderOption::into_enum_iter()
+            .map(|option| (option, JsString::from(option.as_str())))
+            .collect();
+
         self.file
             .header_suggestions()
             .map(|suggestion| {
-                HeaderOption::into_enum_iter()
-                    .map(|option| {
-                        js_array![
-                            JsValue::from_str(option.as_str()),
-                            JsValue::from_bool(suggestion == option)
-                        ]
+                header_mapping
+                    .iter()
+                    .map(|(option, option_str)| {
+                        let map = Map::new();
+                        map.set(&cell_val_key, &option_str);
+                        map.set(&cell_selected_key, &JsValue::from(suggestion == *option));
+                        map
                     })
                     .collect::<Array>()
             })
@@ -119,11 +127,15 @@ impl UploadSession {
     }
 
     #[wasm_bindgen]
-    pub fn get_row_slice(&self, index: usize, length: usize) -> Result<Array, JsValue> {
-        if index + length > self.file.height() {
+    pub fn get_row_slice(&self, index: usize, length: usize) -> Result<Array, MoneyError> {
+        let height = self.file.height();
+        if index + length > height {
             return Err(MoneyError::new(
                 MoneyErrorKind::OutOfBounds,
-                format!("Index {} plus length {} goes out of bounds", index, length).into(),
+                format!(
+                    "Index {} plus length {} goes past length {}",
+                    index, length, height
+                ),
             )
             .into());
         }
@@ -142,7 +154,7 @@ impl UploadSession {
         &mut self,
         column_index: usize,
         selection: String,
-    ) -> Result<(), JsValue> {
+    ) -> Result<(), MoneyError> {
         if column_index > self.header_selections.len() {
             return Err(MoneyError::new(
                 MoneyErrorKind::OutOfBounds,
@@ -150,8 +162,7 @@ impl UploadSession {
                     "Column index {} greater than length {}",
                     column_index,
                     self.header_selections.len()
-                )
-                .into(),
+                ),
             )
             .into());
         }
