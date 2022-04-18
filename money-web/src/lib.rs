@@ -70,6 +70,7 @@ pub enum MoneyErrorKind {
     RowWidthMismatch,
     UnexpectedFailure,
     EncodingError,
+    RequestError,
 }
 
 impl MoneyErrorKind {
@@ -80,6 +81,7 @@ impl MoneyErrorKind {
             MoneyErrorKind::RowWidthMismatch => "RowWidthMismatch",
             MoneyErrorKind::UnexpectedFailure => "UnexpectedFailure",
             MoneyErrorKind::EncodingError => "EncodingError",
+            MoneyErrorKind::RequestError => "RequestError",
         }
     }
 }

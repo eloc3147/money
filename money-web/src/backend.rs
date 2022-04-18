@@ -1,11 +1,30 @@
-use serde::Serialize;
+use std::marker::PhantomData;
+
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Headers, Request, RequestInit, RequestMode, Response};
+use web_sys::{console, Headers, Request, RequestInit, RequestMode, Response};
 
 use crate::{MoneyError, MoneyErrorKind};
 
 use common::SubmitDataRequest;
+
+struct BackendResponse<'a, D> {
+    resp_text: String,
+    phantom: PhantomData<&'a D>,
+}
+
+impl<'a, D> BackendResponse<'a, D>
+where
+    D: Deserialize<'a>,
+{
+    pub fn deserialize(&'a self) -> Result<D, MoneyError> {
+        serde_json::from_str(&self.resp_text).map_err(|err| MoneyError {
+            kind: MoneyErrorKind::EncodingError,
+            msg: format!("Error encoding request: {}", err),
+        })
+    }
+}
 
 pub struct Backend;
 
@@ -40,20 +59,52 @@ impl Backend {
         let resp: Response = resp_value
             .dyn_into()
             .expect("Response value is not a Response");
+
+        if !resp.ok() {
+            return Err(MoneyError {
+                kind: MoneyErrorKind::RequestError,
+                msg: format!(
+                    "Request to {} gave status {} {}",
+                    endpoint,
+                    resp.status(),
+                    resp.status_text()
+                ),
+            }
+            .into());
+        }
+
         Ok(resp)
+    }
+
+    async fn request_json<'a, S, D>(
+        request: &S,
+        endpoint: &str,
+    ) -> Result<BackendResponse<'a, D>, JsValue>
+    where
+        S: Serialize,
+        D: Deserialize<'a>,
+        D: 'a,
+    {
+        let resp = Self::send_request(request, endpoint).await?;
+        let resp_text = JsFuture::from(resp.text()?).await?.as_string().unwrap();
+        Ok(BackendResponse {
+            resp_text,
+            phantom: PhantomData,
+        })
     }
 
     pub async fn add_transactions(
         headers: Vec<String>,
-        rows: Vec<String>,
+        cells: Vec<String>,
         width: usize,
     ) -> Result<(), JsValue> {
         let request = SubmitDataRequest {
             headers,
-            rows,
+            cells,
             width,
         };
         let resp = Self::send_request(&request, "/api/add_transactions").await?;
+        console::log_2(&"Resp: ".into(), &resp);
         Ok(())
     }
 }
