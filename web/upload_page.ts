@@ -10,11 +10,12 @@ export class UploadPage implements Page {
     title: HTMLParagraphElement;
     subtitle: HTMLParagraphElement;
     upload_select: UploadSelect;
+    error_label: HTMLDivElement;
+    error_box: HTMLElement;
 
     input_field: HTMLDivElement;
     load_field: HTMLDivElement;
 
-    error_label: HTMLDivElement;
     show_more_wrapper: HTMLFieldSetElement;
     submit_wrapper: HTMLFieldSetElement;
     show_more_button: HTMLButtonElement;
@@ -38,11 +39,14 @@ export class UploadPage implements Page {
     onmount() {
         this.title = el("p", { class: "title is-1" }, "Add Transactions");
         this.subtitle = el("p", { class: "subtitle is-3" }, "Select a file");
+        this.error_label = el("div", { className: "message-body is-hidden" }, "");
+        this.error_box = el("article", { className: "message is-danger" }, this.error_label);
         this.upload_select = new UploadSelect(this);
 
         this.el.set_contents([
             this.title,
             this.subtitle,
+            this.error_box,
             this.upload_select
         ]);
     }
@@ -51,8 +55,19 @@ export class UploadPage implements Page {
         this.el.set_contents([
             this.title,
             this.subtitle,
+            this.error_box,
             this.upload_select
         ]);
+    }
+
+    set_error(error_msg: string) {
+        if (error_msg !== null) {
+            this.error_label.textContent = error_msg;
+            this.error_label.className = "message-body";
+        } else {
+            this.error_label.textContent = "";
+            this.error_label.className = "message-body is-hidden";
+        }
     }
 
     load_file(file: File) {
@@ -70,6 +85,7 @@ export class UploadPage implements Page {
     }
 
     draw_preview(reader: FileReader) {
+        this.set_error(null);
         let session = this.client.load_file(reader);
 
         this.subtitle.innerText = "Select the types of each column";
@@ -78,13 +94,16 @@ export class UploadPage implements Page {
         this.el.set_contents([
             this.title,
             this.subtitle,
+            this.error_box,
             new UploadPreview(this, session)
         ])
     }
 
     draw_submitted() {
+        this.set_error(null);
         this.el.set_contents([
             this.title,
+            this.error_box,
             new UploadSubmitted()
         ]);
     }
@@ -112,10 +131,23 @@ class UploadSelect implements RedomComponent {
             )
         ]);
 
-        this.load_button.onclick = evt => {
+        this.load_button.onclick = (evt) => {
             evt.preventDefault();
 
-            this.upload_page.load_file(this.file_field.files[0]);
+            if (this.file_field.files.length != 1) {
+                this.upload_page.set_error("Please select one file to upload.")
+            } else {
+                this.upload_page.set_error(null);
+            }
+
+            let reader = new FileReader();
+            reader.onloadend = (_E) => {
+                fetch("/api/upload/", { method: "post", body: reader.result }).then((resp) => {
+                    console.log("Upload response", resp);
+                })
+            };
+
+            reader.readAsArrayBuffer(this.file_field.files[0]);
         };
     }
 }
@@ -132,7 +164,6 @@ class UploadPreview implements RedomComponent {
     show_more_wrapper: HTMLFieldSetElement;
     submit_button: HTMLButtonElement;
     submit_wrapper: HTMLFieldSetElement;
-    error_label: HTMLDivElement;
 
     constructor(upload_page: UploadPage, session: UploadSession) {
         this.upload_page = upload_page;
@@ -147,9 +178,6 @@ class UploadPreview implements RedomComponent {
         );
 
         this.el = el("div", [
-            el("article", { className: "message is-danger" },
-                this.error_label = el("div", { className: "message-body is-hidden" }, "")
-            ),
             this.table,
             el("div", { className: "field is-grouped" }, [
                 this.show_more_wrapper = el("fieldset",
@@ -207,13 +235,11 @@ class UploadPreview implements RedomComponent {
     check_error(): boolean {
         let selection_error = this.session.get_selection_error();
         if (selection_error !== undefined) {
-            this.error_label.textContent = selection_error;
-            this.error_label.className = "message-body";
+            this.upload_page.set_error(selection_error);
             this.submit_wrapper.setAttribute("disabled", "true");
             return true;
         } else {
-            this.error_label.textContent = "";
-            this.error_label.className = "message-body is-hidden";
+            this.upload_page.set_error(null);
             this.submit_wrapper.removeAttribute("disabled");
             return false;
         }

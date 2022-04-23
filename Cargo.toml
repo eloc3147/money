@@ -1,11 +1,13 @@
 [package]
 authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
-edition = "2018"
+edition = "2021"
 name = "money"
 version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0"
 rocket = {version = "0.5.0-rc.1", features = ["json"]}
+tokio = "1.17.0"
+tokio-stream = "0.1"
 
-common = {path = "common"}
+csv-async = {version = "1.1", default_features = false, features = ["tokio"]}
