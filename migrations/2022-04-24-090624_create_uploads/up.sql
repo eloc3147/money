@@ -1,0 +1,3 @@
+CREATE TABLE uploads (
+  id SERIAL PRIMARY KEY
+)

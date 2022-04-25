@@ -1,34 +1,41 @@
 #[macro_use]
 extern crate rocket;
+#[macro_use]
+extern crate diesel;
+#[macro_use]
+extern crate diesel_migrations;
 
-use csv_async::{AsyncReader, Error};
-use rocket::data::{Data, ToByteUnit};
+mod api;
+mod error;
+
+mod models;
+mod schema;
+
+use rocket::fairing::AdHoc;
+use rocket::{Build, Rocket};
+use rocket_sync_db_pools::database;
+
 use rocket::fs::FileServer;
-use tokio_stream::StreamExt;
 
-#[post("/", data = "<file>")]
-async fn add_upload(file: Data<'_>) -> std::io::Result<()> {
-    println!("New upload");
-    let file_stream = file.open(10u8.mebibytes());
-    let mut reader = AsyncReader::from_reader(file_stream);
+#[database("money")]
+pub struct Db(diesel::PgConnection);
 
-    let headers = reader.headers().await?.iter();
-    println!("Headers: {:?}", headers.collect::<Vec<&str>>().join(","));
+async fn run_migrations(rocket: Rocket<Build>) -> Rocket<Build> {
+    embed_migrations!("migrations");
 
-    let rows = reader
-        .records()
-        .map(|row| -> Result<String, Error> { Ok(row?.iter().collect::<Vec<&str>>().join(",")) })
-        .collect::<Result<Vec<String>, Error>>()
-        .await?;
+    let conn = Db::get_one(&rocket).await.expect("database connection");
+    conn.run(|c| embedded_migrations::run(c))
+        .await
+        .expect("diesel migrations");
 
-    println!("Rows: {:#?}", rows);
-
-    Ok(())
+    rocket
 }
 
 #[launch]
 fn rocket() -> _ {
     rocket::build()
+        .attach(Db::fairing())
+        .attach(api::stage())
+        .attach(AdHoc::on_ignite("Database Migrations", run_migrations))
         .mount("/", FileServer::from("static"))
-        .mount("/api/upload", routes![add_upload])
 }
