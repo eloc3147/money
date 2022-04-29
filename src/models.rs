@@ -1,6 +1,7 @@
 use diesel::{Insertable, Queryable};
 use rocket_sync_db_pools::diesel;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::schema::{upload_cells, uploads};
 
@@ -20,4 +21,5 @@ pub struct UploadCell {
 #[table_name = "uploads"]
 pub struct Upload {
     pub id: i32,
+    pub web_id: Uuid,
 }

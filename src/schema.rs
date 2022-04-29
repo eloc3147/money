@@ -12,6 +12,7 @@ table! {
 table! {
     uploads (id) {
         id -> Int4,
+        web_id -> Uuid,
     }
 }
 

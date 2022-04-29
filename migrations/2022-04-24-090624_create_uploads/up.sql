@@ -1,3 +1,4 @@
 CREATE TABLE uploads (
-  id SERIAL PRIMARY KEY
+  id SERIAL PRIMARY KEY,
+  web_id uuid NOT NULL
 )
