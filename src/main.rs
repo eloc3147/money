@@ -35,7 +35,7 @@ async fn run_migrations(rocket: Rocket<Build>) -> Rocket<Build> {
 fn rocket() -> _ {
     rocket::build()
         .attach(Db::fairing())
-        .attach(api::stage())
+        .attach(api::upload::stage())
         .attach(AdHoc::on_ignite("Database Migrations", run_migrations))
         .mount("/", FileServer::from("static"))
 }
