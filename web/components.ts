@@ -38,6 +38,11 @@ export class Tr implements RedomComponent {
     }
 }
 
+export interface OptionConfig {
+    value: string,
+    selected: boolean
+}
+
 export class Option implements RedomComponent {
     el: HTMLOptionElement;
 
@@ -45,10 +50,10 @@ export class Option implements RedomComponent {
         this.el = el("option");
     }
 
-    update(item: Map<string, any>, index: number, _data: any, _context?: any): void {
+    update(config: OptionConfig, index: number, _data: any, _context?: any): void {
         this.el.value = index.toString();
-        this.el.textContent = item.get("cell_value");
-        this.el.selected = item.get("selected");
+        this.el.textContent = config.value;
+        this.el.selected = config.selected;
     }
 }
 
@@ -71,15 +76,15 @@ export class TdDropdown implements RedomComponent {
     }
 
     push_selection(): void {
-        var index = (this.select.el as HTMLSelectElement).selectedIndex;
-        var input_text = this.select.el.children[index].innerHTML.trim();
+        let index = (this.select.el as HTMLSelectElement).selectedIndex;
+        let input_text = this.select.el.children[index].innerHTML.trim();
 
         if (this.callback != null) {
             this.callback(this.column_index, input_text);
         }
     }
 
-    update(item: Map<string, any>[], index: number, _data: any, context?: any): void {
+    update(item: OptionConfig[], index: number, _data: any, context?: any): void {
         this.column_index = index;
         this.callback = context.callback;
         this.select.update(item);
@@ -108,7 +113,7 @@ export class Table implements RedomComponent {
         this.header_row.update(headers);
     }
 
-    set_suggestions(suggestions: Map<string, any>[][], column_callback: (column_index: number, input_text: string) => void): void {
+    set_suggestions(suggestions: OptionConfig[][], column_callback: (column_index: number, input_text: string) => void): void {
         this.dropdown_element.update(suggestions, { callback: column_callback });
     }
 

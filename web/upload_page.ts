@@ -1,7 +1,8 @@
 import { el, RedomComponent } from "redom";
-import { Money, UploadSession } from "../money-web/pkg/money_web";
-import { Table, ColumnView } from "./components";
+import { Money } from "../money-web/pkg/money_web";
+import { Table, ColumnView, OptionConfig } from "./components";
 import { Page } from "./page";
+import { add_upload, HEADER_OPTIONS } from "./api";
 
 
 export class UploadPage implements Page {
@@ -71,32 +72,24 @@ export class UploadPage implements Page {
     }
 
     load_file(file: File) {
-        var reader = new FileReader();
-        reader.onloadend = _evt => {
-            if (reader == null) {
-                console.log("Error: reader is null.");
-                return;
-            }
+        let reader = new FileReader();
+        reader.onloadend = async (_E) => {
+            await add_upload(reader.result)
+                .then((resp) => {
+                    this.set_error(null);
+                    this.subtitle.innerText = "Select the types of each column";
 
-            this.draw_preview(reader);
+                    this.el.set_column_args("is-full");
+                    this.el.set_contents([
+                        this.title,
+                        this.subtitle,
+                        this.error_box,
+                        new UploadPreview(this, resp.upload_id, resp.headers, resp.header_suggestions)
+                    ])
+                })
         };
 
-        reader.readAsText(file);
-    }
-
-    draw_preview(reader: FileReader) {
-        this.set_error(null);
-        let session = this.client.load_file(reader);
-
-        this.subtitle.innerText = "Select the types of each column";
-
-        this.el.set_column_args("is-full");
-        this.el.set_contents([
-            this.title,
-            this.subtitle,
-            this.error_box,
-            new UploadPreview(this, session)
-        ])
+        reader.readAsArrayBuffer(file);
     }
 
     draw_submitted() {
@@ -140,22 +133,16 @@ class UploadSelect implements RedomComponent {
                 this.upload_page.set_error(null);
             }
 
-            let reader = new FileReader();
-            reader.onloadend = (_E) => {
-                fetch("/api/upload/", { method: "post", body: reader.result }).then((resp) => {
-                    console.log("Upload response", resp);
-                })
-            };
-
-            reader.readAsArrayBuffer(this.file_field.files[0]);
+            this.upload_page.load_file(this.file_field.files[0]);
         };
     }
 }
 
 
 class UploadPreview implements RedomComponent {
-    session: UploadSession;
+    upload_id: string;
     upload_page: UploadPage;
+    header_suggestions: string[];
     current_row_count: number;
 
     el: HTMLDivElement;
@@ -165,15 +152,25 @@ class UploadPreview implements RedomComponent {
     submit_button: HTMLButtonElement;
     submit_wrapper: HTMLFieldSetElement;
 
-    constructor(upload_page: UploadPage, session: UploadSession) {
+    constructor(upload_page: UploadPage, upload_id: string, headers: string[], header_suggestions: string[]) {
         this.upload_page = upload_page;
-        this.session = session;
+        this.upload_id = upload_id;
+        this.header_suggestions = header_suggestions;
         this.current_row_count = 0;
 
+        let expanded_suggestions = header_suggestions.map((suggestion) => {
+            return HEADER_OPTIONS.map(option => {
+                return {
+                    value: option,
+                    selected: option == suggestion
+                } as OptionConfig;
+            });
+        });
+
         this.table = new Table();
-        this.table.set_headers(this.session.get_headers().map(h => '"' + h + '"'));
+        this.table.set_headers(headers.map(h => '"' + h + '"'));
         this.table.set_suggestions(
-            this.session.get_header_suggestions(),
+            expanded_suggestions,
             (column_index, selection) => this.process_update(column_index, selection)
         );
 
@@ -210,6 +207,8 @@ class UploadPreview implements RedomComponent {
     }
 
     add_rows(): void {
+        console.log("TODO: Add rows");
+        return;
         let total_row_count = this.session.get_row_count();
         let remaining_rows = Math.max(0, total_row_count - this.current_row_count);
         let row_count = Math.min(10, remaining_rows);
