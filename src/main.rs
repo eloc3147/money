@@ -6,6 +6,7 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 mod api;
+mod components;
 mod error;
 
 mod models;
