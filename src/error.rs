@@ -2,50 +2,90 @@ use std::fmt;
 
 use csv_async;
 use diesel;
-use rocket::request::Request;
+use rocket::{
+    http::Status,
+    request::Request,
+    response::{self, Responder},
+    serde::{json::Json, Serialize},
+};
 use yansi::Paint;
 
-macro_rules! error_impl {
-    ($enum_name:ident, $(($err_name:ident, $err_msg:expr, $from_type:path)),+) => (
-        #[derive(Debug)]
-        pub enum $enum_name {
-            $($err_name($from_type)),+
-        }
-
-        impl ::std::fmt::Display for $enum_name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match &self {
-                    $($enum_name::$err_name(e) => write!(f, concat!($err_msg, ": {}"), e)),+
-                }
-            }
-        }
-
-        impl<'r> ::rocket::response::Responder<'r, 'static> for $enum_name {
-            fn respond_to(self, _: &'r Request<'_>) -> ::rocket::response::Result<'static> {
-                match &self {
-                    $($enum_name::$err_name(e) => warn_!(concat!($err_msg, ": {}"), Paint::default(e))),+
-                }
-                ::rocket::response::Result::Err(::rocket::http::Status::InternalServerError)
-            }
-        }
-
-        $(
-            impl From<$from_type> for $enum_name {
-                fn from(error: $from_type) -> $enum_name {
-                    $enum_name::$err_name(error)
-                }
-            }
-        )+
-    );
+#[derive(Serialize, Debug)]
+struct MoneyErrorMsg {
+    status: &'static str,
+    msg: &'static str,
 }
 
-error_impl!(
-    MoneyError,
-    (IoError, "I/O Error", std::io::Error),
-    (DbError, "Database Error", diesel::result::Error),
-    (CsvError, "CSV Parsing Error", csv_async::Error),
-    (TableError, "Table Access Error", TableError)
-);
+#[derive(Debug)]
+pub enum MoneyError {
+    IoError(std::io::Error),
+    DbError(diesel::result::Error),
+    CsvError(csv_async::Error),
+    TableError(TableError),
+    MissingEndpoint(String),
+}
+
+impl MoneyError {
+    pub fn msg(&self) -> &'static str {
+        match self {
+            MoneyError::IoError(_) => "I/O Error",
+            MoneyError::DbError(_) => "Database Error",
+            MoneyError::CsvError(_) => "CSV Parsing Error",
+            MoneyError::TableError(_) => "Table Access Error",
+            MoneyError::MissingEndpoint(_) => "Endpoint not found",
+        }
+    }
+}
+
+impl fmt::Display for MoneyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            MoneyError::IoError(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::DbError(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::CsvError(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::TableError(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::MissingEndpoint(e) => write!(f, "{}: {}", self.msg(), e),
+        }
+    }
+}
+
+impl<'r> Responder<'r, 'static> for MoneyError {
+    fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
+        warn_!("{}", Paint::default(&self));
+
+        let mut resp = Json(MoneyErrorMsg {
+            status: "error",
+            msg: self.msg(),
+        })
+        .respond_to(req)?;
+        resp.set_status(Status::InternalServerError);
+        Ok(resp)
+    }
+}
+
+impl From<std::io::Error> for MoneyError {
+    fn from(error: std::io::Error) -> MoneyError {
+        MoneyError::IoError(error)
+    }
+}
+
+impl From<diesel::result::Error> for MoneyError {
+    fn from(error: diesel::result::Error) -> MoneyError {
+        MoneyError::DbError(error)
+    }
+}
+
+impl From<csv_async::Error> for MoneyError {
+    fn from(error: csv_async::Error) -> MoneyError {
+        MoneyError::CsvError(error)
+    }
+}
+
+impl From<TableError> for MoneyError {
+    fn from(error: TableError) -> MoneyError {
+        MoneyError::TableError(error)
+    }
+}
 
 #[derive(Debug)]
 pub enum TableError {
