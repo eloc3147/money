@@ -1,19 +1,15 @@
-use std::fmt;
-
 use csv_async::{self, AsyncReader};
 use diesel::{prelude::*, Connection, RunQueryDsl};
 use rocket::{
     data::{Data, DataStream, ToByteUnit},
     fairing::AdHoc,
     futures::StreamExt,
-    serde::{
-        de::{self, Visitor},
-        json::Json,
-        Deserialize, Deserializer, Serialize, Serializer,
-    },
+    serde::{json::Json, Serialize},
+    Route,
 };
 use uuid::Uuid;
 
+use crate::components::{HeaderOption, MoneyMsg, MoneyResult};
 use crate::error::Result;
 use crate::models::{Upload, UploadCell};
 use crate::Db;
@@ -64,7 +60,7 @@ struct AddUploadResponse {
 }
 
 #[post("/", data = "<file>")]
-async fn add_upload(db: Db, file: Data<'_>) -> Result<Json<AddUploadResponse>> {
+async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
     let file_stream = file.open(10u8.mebibytes());
 
     let (upload_id, web_id) = db
@@ -97,7 +93,7 @@ async fn add_upload(db: Db, file: Data<'_>) -> Result<Json<AddUploadResponse>> {
     .await?;
 
     let header_suggestions = headers.iter().map(|h| HeaderOption::from_str(h)).collect();
-    Ok(Json(AddUploadResponse {
+    Ok(MoneyMsg::new(AddUploadResponse {
         upload_id: web_id,
         headers,
         header_suggestions,
@@ -108,4 +104,6 @@ pub fn stage() -> AdHoc {
     AdHoc::on_ignite("Money API", |rocket| async {
         rocket.mount("/api/upload", routes![add_upload])
     })
+pub fn routes() -> Vec<Route> {
+    routes![add_upload]
 }

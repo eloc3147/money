@@ -8,15 +8,14 @@ extern crate diesel_migrations;
 mod api;
 mod components;
 mod error;
-
 mod models;
 mod schema;
 
-use rocket::fairing::AdHoc;
-use rocket::{Build, Rocket};
+use rocket::{fairing::AdHoc, fs::FileServer, Build, Request, Rocket};
 use rocket_sync_db_pools::database;
 
-use rocket::fs::FileServer;
+use components::MoneyResult;
+use error::MoneyError;
 
 #[database("money")]
 pub struct Db(diesel::PgConnection);
@@ -36,7 +35,7 @@ async fn run_migrations(rocket: Rocket<Build>) -> Rocket<Build> {
 fn rocket() -> _ {
     rocket::build()
         .attach(Db::fairing())
-        .attach(api::upload::stage())
+        .attach(api::stage())
         .attach(AdHoc::on_ignite("Database Migrations", run_migrations))
         .mount("/", FileServer::from("static"))
 }
