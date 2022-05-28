@@ -1,9 +1,16 @@
-import { el, mount, unmount, RedomElement } from "redom";
+import { el, mount, unmount } from "redom";
 
 import init, { Money } from "../money-web/pkg/money_web";
 import { UploadPage } from "./upload_page";
 import { HomePage } from "./home_page";
 import { Page } from "./page";
+
+
+export class MoneyError extends Error {
+    constructor(message: string) {
+        super(message);
+    }
+}
 
 
 class NavbarItem {

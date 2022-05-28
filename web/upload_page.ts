@@ -2,7 +2,7 @@ import { el, RedomComponent } from "redom";
 import { Money } from "../money-web/pkg/money_web";
 import { Table, ColumnView, OptionConfig } from "./components";
 import { Page } from "./page";
-import { add_upload, HEADER_OPTIONS } from "./api";
+import { add_upload, get_upload_rows, HEADER_OPTIONS } from "./api";
 
 
 export class UploadPage implements Page {
@@ -84,7 +84,7 @@ export class UploadPage implements Page {
                         this.title,
                         this.subtitle,
                         this.error_box,
-                        new UploadPreview(this, resp.upload_id, resp.headers, resp.header_suggestions)
+                        new UploadPreview(this, resp.upload_id, resp.headers, resp.header_suggestions, resp.row_count)
                     ])
                 })
         };
@@ -144,6 +144,7 @@ class UploadPreview implements RedomComponent {
     upload_page: UploadPage;
     header_suggestions: string[];
     current_row_count: number;
+    upload_row_count: number;
 
     el: HTMLDivElement;
     table: Table;
@@ -152,11 +153,18 @@ class UploadPreview implements RedomComponent {
     submit_button: HTMLButtonElement;
     submit_wrapper: HTMLFieldSetElement;
 
-    constructor(upload_page: UploadPage, upload_id: string, headers: string[], header_suggestions: string[]) {
+    constructor(
+        upload_page: UploadPage,
+        upload_id: string,
+        headers: string[],
+        header_suggestions: string[],
+        row_count: number
+    ) {
         this.upload_page = upload_page;
         this.upload_id = upload_id;
         this.header_suggestions = header_suggestions;
         this.current_row_count = 0;
+        this.upload_row_count = row_count;
 
         let expanded_suggestions = header_suggestions.map((suggestion) => {
             return HEADER_OPTIONS.map(option => {
@@ -206,22 +214,20 @@ class UploadPreview implements RedomComponent {
         this.add_rows();
     }
 
-    add_rows(): void {
-        console.log("TODO: Add rows");
-        return;
-        let total_row_count = this.session.get_row_count();
-        let remaining_rows = Math.max(0, total_row_count - this.current_row_count);
+    async add_rows(): Promise<void> {
+        let remaining_rows = Math.max(0, this.upload_row_count - this.current_row_count);
         let row_count = Math.min(10, remaining_rows);
 
         if (row_count > 0) {
             console.log("Getting rows", this.current_row_count, row_count);
+            let rows = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
             this.table.add_rows(
-                this.session.get_row_slice(this.current_row_count, row_count)
+                []
             );
             this.current_row_count += row_count;
         }
 
-        if (this.current_row_count == total_row_count) {
+        if (this.current_row_count == this.upload_row_count) {
             this.show_more_wrapper.setAttribute("disabled", "true");
         }
     }

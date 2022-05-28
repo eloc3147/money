@@ -17,7 +17,7 @@ use crate::Db;
 async fn parse_csv(
     stream: DataStream<'_>,
     upload_id: i32,
-) -> Result<(Vec<String>, Vec<UploadCell>)> {
+) -> Result<(Vec<String>, Vec<UploadCellInsert>, usize)> {
     let mut reader = AsyncReader::from_reader(stream);
     let mut headers = Vec::new();
     let mut cells = Vec::new();
@@ -36,6 +36,7 @@ async fn parse_csv(
 
     let mut records = reader.records().enumerate();
 
+    let mut row_count: usize = 0;
     while let Some((row_num, row)) = records.next().await {
         for (column_num, cell) in row?.iter().enumerate() {
             cells.push(UploadCell {
@@ -47,16 +48,19 @@ async fn parse_csv(
                 contents: cell.to_string(),
             });
         }
+
+        row_count += 1;
     }
 
-    Ok((headers, cells))
+    Ok((headers, cells, row_count))
 }
 
 #[derive(Clone, PartialEq, Serialize)]
-struct AddUploadResponse {
+pub struct AddUploadResponse {
     upload_id: Uuid,
     headers: Vec<String>,
     header_suggestions: Vec<HeaderOption>,
+    row_count: usize,
 }
 
 #[post("/", data = "<file>")]
@@ -79,7 +83,7 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
         })
         .await?;
 
-    let (headers, cells) = parse_csv(file_stream, upload_id).await?;
+    let (headers, cells, row_count) = parse_csv(file_stream, upload_id).await?;
 
     db.run(move |conn| {
         use crate::schema::upload_cells::dsl::*;
@@ -97,6 +101,7 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
         upload_id: web_id,
         headers,
         header_suggestions,
+        row_count,
     }))
 }
 
