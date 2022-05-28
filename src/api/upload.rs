@@ -68,19 +68,19 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
     let file_stream = file.open(10u8.mebibytes());
 
     let (upload_id, web_id) = db
-        .run(move |conn| {
-            use crate::schema::uploads::dsl::*;
+        .run(
+            move |conn| -> std::result::Result<(i32, Uuid), diesel::result::Error> {
+                use crate::schema::uploads::dsl::*;
 
-            let wid = Uuid::new_v4();
-            conn.transaction::<_, diesel::result::Error, _>(|| {
-                diesel::insert_into(uploads)
+                let wid = Uuid::new_v4();
+                let uid = diesel::insert_into(uploads)
                     .values(UploadInsert { web_id: wid })
-                    .execute(conn)?;
+                    .get_result::<Upload>(conn)?
+                    .id;
 
-                let uid = uploads.order(id.desc()).first::<Upload>(conn)?.id;
                 Ok((uid, wid))
-            })
-        })
+            },
+        )
         .await?;
 
     let (headers, cells, row_count) = parse_csv(file_stream, upload_id).await?;
