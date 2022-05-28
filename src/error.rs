@@ -8,6 +8,7 @@ use rocket::{
     response::{self, Responder},
     serde::{json::Json, Serialize},
 };
+use uuid;
 use yansi::Paint;
 
 #[derive(Serialize, Debug)]
@@ -23,6 +24,7 @@ pub enum MoneyError {
     CsvError(csv_async::Error),
     TableError(TableError),
     MissingEndpoint(String),
+    InvalidUuid(uuid::Error),
 }
 
 impl MoneyError {
@@ -33,6 +35,7 @@ impl MoneyError {
             MoneyError::CsvError(_) => "CSV Parsing Error",
             MoneyError::TableError(_) => "Table Access Error",
             MoneyError::MissingEndpoint(_) => "Endpoint not found",
+            MoneyError::InvalidUuid(_) => "Invalid UUID",
         }
     }
 }
@@ -45,6 +48,7 @@ impl fmt::Display for MoneyError {
             MoneyError::CsvError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::TableError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::MissingEndpoint(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::InvalidUuid(e) => write!(f, "{}: {}", self.msg(), e),
         }
     }
 }
@@ -78,6 +82,12 @@ impl From<diesel::result::Error> for MoneyError {
 impl From<csv_async::Error> for MoneyError {
     fn from(error: csv_async::Error) -> MoneyError {
         MoneyError::CsvError(error)
+    }
+}
+
+impl From<uuid::Error> for MoneyError {
+    fn from(error: uuid::Error) -> MoneyError {
+        MoneyError::InvalidUuid(error)
     }
 }
 
