@@ -5,11 +5,10 @@ use uuid::Uuid;
 
 use crate::schema::{upload_cells, uploads};
 
-#[derive(Debug, Clone, Deserialize, Serialize, Queryable, Insertable, Associations)]
+#[derive(Debug, Clone, Deserialize, Serialize, Insertable, Associations)]
 #[belongs_to(Upload)]
 #[table_name = "upload_cells"]
-pub struct UploadCell {
-    pub id: Option<i32>,
+pub struct UploadCellInsert {
     pub upload_id: i32,
     pub header: bool,
     pub row_num: i64,
@@ -17,7 +16,25 @@ pub struct UploadCell {
     pub contents: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Queryable, Insertable)]
+#[derive(Identifiable, Debug, Clone, Deserialize, Serialize, Queryable, Associations)]
+#[belongs_to(Upload)]
+#[table_name = "upload_cells"]
+pub struct UploadCell {
+    pub id: i32,
+    pub upload_id: i32,
+    pub header: bool,
+    pub row_num: i64,
+    pub column_num: i64,
+    pub contents: String,
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[table_name = "uploads"]
+pub struct UploadInsert {
+    pub web_id: Uuid,
+}
+
+#[derive(Identifiable, Debug, Clone, Deserialize, Serialize, Queryable)]
 #[table_name = "uploads"]
 pub struct Upload {
     pub id: i32,

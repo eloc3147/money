@@ -2,17 +2,19 @@ use csv_async::{self, AsyncReader};
 use diesel::{prelude::*, Connection, RunQueryDsl};
 use rocket::{
     data::{Data, DataStream, ToByteUnit},
-    fairing::AdHoc,
     futures::StreamExt,
-    serde::{json::Json, Serialize},
+    serde::Serialize,
     Route,
 };
 use uuid::Uuid;
 
-use crate::components::{HeaderOption, MoneyMsg, MoneyResult};
-use crate::error::Result;
 use crate::models::{Upload, UploadCell};
 use crate::Db;
+use crate::{
+    components::{HeaderOption, MoneyMsg, MoneyResult},
+    error::Result,
+    models::{UploadCellInsert, UploadInsert},
+};
 
 async fn parse_csv(
     stream: DataStream<'_>,
@@ -24,8 +26,7 @@ async fn parse_csv(
 
     for (column_num, cell) in reader.headers().await?.iter().enumerate() {
         headers.push(cell.to_string());
-        cells.push(UploadCell {
-            id: None,
+        cells.push(UploadCellInsert {
             upload_id,
             header: true,
             row_num: 0,
@@ -39,8 +40,7 @@ async fn parse_csv(
     let mut row_count: usize = 0;
     while let Some((row_num, row)) = records.next().await {
         for (column_num, cell) in row?.iter().enumerate() {
-            cells.push(UploadCell {
-                id: None,
+            cells.push(UploadCellInsert {
                 upload_id,
                 header: false,
                 row_num: row_num as i64,
@@ -74,7 +74,7 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
             let wid = Uuid::new_v4();
             conn.transaction::<_, diesel::result::Error, _>(|| {
                 diesel::insert_into(uploads)
-                    .values(web_id.eq(wid))
+                    .values(UploadInsert { web_id: wid })
                     .execute(conn)?;
 
                 let uid = uploads.order(id.desc()).first::<Upload>(conn)?.id;
