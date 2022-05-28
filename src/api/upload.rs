@@ -16,10 +16,14 @@ use crate::{
     models::{UploadCellInsert, UploadInsert},
 };
 
-async fn parse_csv(
-    stream: DataStream<'_>,
-    upload_id: i32,
-) -> Result<(Vec<String>, Vec<UploadCellInsert>, usize)> {
+pub struct CsvFile {
+    headers: Vec<String>,
+    cells: Vec<UploadCellInsert>,
+    row_count: usize,
+    column_count: usize,
+}
+
+async fn parse_csv(stream: DataStream<'_>, upload_id: i32) -> Result<CsvFile> {
     let mut reader = AsyncReader::from_reader(stream);
     let mut headers = Vec::new();
     let mut cells = Vec::new();
@@ -52,7 +56,12 @@ async fn parse_csv(
         row_count += 1;
     }
 
-    Ok((headers, cells, row_count))
+    Ok(CsvFile {
+        column_count: headers.len(),
+        headers,
+        cells,
+        row_count,
+    })
 }
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -83,25 +92,37 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
         )
         .await?;
 
-    let (headers, cells, row_count) = parse_csv(file_stream, upload_id).await?;
+    let parsed = parse_csv(file_stream, upload_id).await?;
 
     db.run(move |conn| {
-        use crate::schema::upload_cells::dsl::*;
-
         conn.transaction::<_, diesel::result::Error, _>(|| {
+            use crate::schema::upload_cells::dsl::upload_cells;
+            use crate::schema::uploads::dsl::{column_count, row_count, uploads};
+
             diesel::insert_into(upload_cells)
-                .values(cells)
+                .values(parsed.cells)
+                .execute(conn)?;
+
+            diesel::update(uploads.find(upload_id))
+                .set((
+                    row_count.eq(parsed.row_count as i64),
+                    column_count.eq(parsed.column_count as i64),
+                ))
                 .execute(conn)
         })
     })
     .await?;
 
-    let header_suggestions = headers.iter().map(|h| HeaderOption::from_str(h)).collect();
+    let header_suggestions = parsed
+        .headers
+        .iter()
+        .map(|h| HeaderOption::from_str(h))
+        .collect();
     Ok(MoneyMsg::new(AddUploadResponse {
         upload_id: web_id,
-        headers,
+        headers: parsed.headers,
         header_suggestions,
-        row_count,
+        row_count: parsed.row_count,
     }))
 }
 
