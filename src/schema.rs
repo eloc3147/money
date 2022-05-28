@@ -13,6 +13,8 @@ table! {
     uploads (id) {
         id -> Int4,
         web_id -> Uuid,
+        row_count -> Int8,
+        column_count -> Int8,
     }
 }
 

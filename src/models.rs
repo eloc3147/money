@@ -39,4 +39,6 @@ pub struct UploadInsert {
 pub struct Upload {
     pub id: i32,
     pub web_id: Uuid,
+    pub row_count: i64,
+    pub column_count: i64,
 }
