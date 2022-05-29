@@ -143,6 +143,7 @@ class UploadPreview implements RedomComponent {
     upload_id: string;
     upload_page: UploadPage;
     header_suggestions: string[];
+    column_count: number;
     current_row_count: number;
     upload_row_count: number;
 
@@ -163,6 +164,7 @@ class UploadPreview implements RedomComponent {
         this.upload_page = upload_page;
         this.upload_id = upload_id;
         this.header_suggestions = header_suggestions;
+        this.column_count = headers.length;
         this.current_row_count = 0;
         this.upload_row_count = row_count;
 
@@ -220,10 +222,12 @@ class UploadPreview implements RedomComponent {
 
         if (row_count > 0) {
             console.log("Getting rows", this.current_row_count, row_count);
-            let rows = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
-            this.table.add_rows(
-                []
-            );
+            let resp = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
+            let rows = [];
+            for (let i = 0; i < resp.cells.length; i += this.column_count) {
+                rows.push(resp.cells.slice(i, i + this.column_count));
+            }
+            this.table.add_rows(rows);
             this.current_row_count += row_count;
         }
 
