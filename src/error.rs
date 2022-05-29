@@ -22,9 +22,9 @@ pub enum MoneyError {
     IoError(std::io::Error),
     DbError(diesel::result::Error),
     CsvError(csv_async::Error),
-    TableError(TableError),
     MissingEndpoint(String),
     InvalidUuid(uuid::Error),
+    RowIndex(u64),
 }
 
 impl MoneyError {
@@ -33,9 +33,18 @@ impl MoneyError {
             MoneyError::IoError(_) => "I/O Error",
             MoneyError::DbError(_) => "Database Error",
             MoneyError::CsvError(_) => "CSV Parsing Error",
-            MoneyError::TableError(_) => "Table Access Error",
             MoneyError::MissingEndpoint(_) => "Endpoint not found",
             MoneyError::InvalidUuid(_) => "Invalid UUID",
+            MoneyError::RowIndex(_) => "Requested row does not exist",
+        }
+    }
+
+    pub fn context(&self) -> Option<String> {
+        match self {
+            MoneyError::CsvError(e) => Some(e.to_string()),
+            MoneyError::MissingEndpoint(endpoint) => Some(endpoint.clone()),
+            MoneyError::RowIndex(row) => Some(row.to_string()),
+            _ => None,
         }
     }
 }
@@ -46,9 +55,9 @@ impl fmt::Display for MoneyError {
             MoneyError::IoError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::DbError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::CsvError(e) => write!(f, "{}: {}", self.msg(), e),
-            MoneyError::TableError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::MissingEndpoint(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::InvalidUuid(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::RowIndex(r) => write!(f, "{}: {}", self.msg(), r),
         }
     }
 }
@@ -81,7 +90,14 @@ impl From<diesel::result::Error> for MoneyError {
 
 impl From<csv_async::Error> for MoneyError {
     fn from(error: csv_async::Error) -> MoneyError {
-        MoneyError::CsvError(error)
+        if error.is_io_error() {
+            match error.into_kind() {
+                csv_async::ErrorKind::Io(e) => MoneyError::IoError(e),
+                _ => unreachable!(),
+            }
+        } else {
+            MoneyError::CsvError(error)
+        }
     }
 }
 
@@ -90,36 +106,5 @@ impl From<uuid::Error> for MoneyError {
         MoneyError::InvalidUuid(error)
     }
 }
-
-impl From<TableError> for MoneyError {
-    fn from(error: TableError) -> MoneyError {
-        MoneyError::TableError(error)
-    }
-}
-
-#[derive(Debug)]
-pub enum TableError {
-    RowIndex { row: usize, bound: usize },
-    RowLength { length: usize, bound: usize },
-}
-
-impl fmt::Display for TableError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self {
-            TableError::RowIndex { row, bound } => {
-                write!(f, "Row {} is outside length {}", row, bound)
-            }
-            TableError::RowLength { length, bound } => {
-                write!(
-                    f,
-                    "Row has length {} which differs from column count {}",
-                    length, bound
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for TableError {}
 
 pub type Result<T> = std::result::Result<T, MoneyError>;

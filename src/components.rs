@@ -10,7 +10,7 @@ use rocket::{
     },
 };
 
-use crate::error::{MoneyError, Result, TableError};
+use crate::error::{MoneyError, Result};
 
 #[derive(Debug, Serialize)]
 pub struct MoneyMsg<T> {

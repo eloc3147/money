@@ -38,7 +38,7 @@ export interface AddUploadResponse {
 }
 
 export interface GetUploadRowsResponse {
-    rows: string[][],
+    cells: string[]
 }
 
 async function api_request(uri: RequestInfo, init_data: RequestInit): Promise<any> {

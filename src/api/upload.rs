@@ -12,7 +12,7 @@ use crate::models::{Upload, UploadCell};
 use crate::Db;
 use crate::{
     components::{HeaderOption, MoneyMsg, MoneyResult},
-    error::Result,
+    error::{MoneyError, Result},
     models::{UploadCellInsert, UploadInsert},
 };
 
@@ -118,6 +118,7 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
         .iter()
         .map(|h| HeaderOption::from_str(h))
         .collect();
+
     Ok(MoneyMsg::new(AddUploadResponse {
         upload_id: web_id,
         headers: parsed.headers,
@@ -126,10 +127,57 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
     }))
 }
 
-pub fn stage() -> AdHoc {
-    AdHoc::on_ignite("Money API", |rocket| async {
-        rocket.mount("/api/upload", routes![add_upload])
-    })
+#[derive(Clone, PartialEq, Serialize)]
+pub struct GetUploadRowsResponse {
+    cells: Vec<String>,
+}
+
+#[get("/<upload_web_id>/rows?<row_index>&<row_count>")]
+pub async fn list_upload_rows(
+    db: Db,
+    upload_web_id: &str,
+    row_index: u64,
+    row_count: u64,
+) -> MoneyResult<GetUploadRowsResponse> {
+    let uuid = Uuid::parse_str(upload_web_id)?;
+
+    let cells = db
+        .run(move |conn| -> Result<Vec<String>> {
+            use crate::schema::upload_cells::dsl::{column_num, header, row_num};
+            use crate::schema::uploads::dsl::{uploads, web_id};
+            use diesel::prelude::*;
+
+            // TODO: Can we make this 1 query?
+            let upload_session = uploads.filter(web_id.eq(uuid)).first::<Upload>(conn)?;
+
+            if row_index as i64 > upload_session.row_count {
+                return Err(MoneyError::RowIndex(row_index));
+            } else if (row_index + row_count) as i64 > upload_session.row_count {
+                return Err(MoneyError::RowIndex(row_index + row_count));
+            }
+
+            let cells = UploadCell::belonging_to(&upload_session)
+                .filter(
+                    row_num
+                        .ge(row_index as i64)
+                        .and(row_num.lt((row_index + row_count) as i64))
+                        .and(header.eq(false)),
+                )
+                .order((row_num.asc(), column_num.asc()))
+                .load::<UploadCell>(conn)?;
+
+            let mut cell_values = Vec::with_capacity(cells.len());
+            for cell in cells {
+                cell_values.push(cell.contents);
+            }
+
+            Ok(cell_values)
+        })
+        .await?;
+
+    Ok(MoneyMsg::new(GetUploadRowsResponse { cells }))
+}
+
 pub fn routes() -> Vec<Route> {
-    routes![add_upload]
+    routes![add_upload, list_upload_rows]
 }
