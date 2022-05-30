@@ -1,13 +1,10 @@
 import { el, RedomComponent } from "redom";
-import { Money } from "../money-web/pkg/money_web";
 import { Table, ColumnView, OptionConfig } from "./components";
 import { Page } from "./page";
 import { add_upload, get_upload_rows, HEADER_OPTIONS, REQUIRED_HEADERS, submit_upload } from "./api";
 
 
 export class UploadPage implements Page {
-    client: Money;
-
     title: HTMLParagraphElement;
     subtitle: HTMLParagraphElement;
     upload_select: UploadSelect;
@@ -24,9 +21,7 @@ export class UploadPage implements Page {
 
     el: ColumnView;
 
-    constructor(client: Money) {
-        this.client = client;
-
+    constructor() {
         this.title = null;
         this.subtitle = null;
         this.upload_select = null;

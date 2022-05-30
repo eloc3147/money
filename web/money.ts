@@ -1,6 +1,5 @@
 import { el, mount, unmount } from "redom";
 
-import init, { Money } from "../money-web/pkg/money_web";
 import { UploadPage } from "./upload_page";
 import { HomePage } from "./home_page";
 import { Page } from "./page";
@@ -32,20 +31,16 @@ class NavbarItem {
 
 
 class MoneyApp {
-    client: Money;
     page_map: { [title: string]: Page };
     navbar_items: NavbarItem[];
     current: Page;
     el: HTMLDivElement;
     content: HTMLDivElement;
 
-    constructor(client: Money) {
-        this.client = client;
-
-        // Nav
+    constructor() {
         this.page_map = {
             "Home": new HomePage(),
-            "Upload": new UploadPage(this.client)
+            "Upload": new UploadPage()
         };
         this.navbar_items = [];
         this.current = null;
@@ -78,11 +73,8 @@ class MoneyApp {
 }
 
 
-async function main() {
-    await init(new URL("/money_web_bg.wasm", window.location.origin));
-    let client = new Money();
-    mount(document.body, new MoneyApp(client));
+function main() {
+    mount(document.body, new MoneyApp());
 }
-
 
 main();
