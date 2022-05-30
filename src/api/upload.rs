@@ -3,9 +3,10 @@ use diesel::{prelude::*, Connection, RunQueryDsl};
 use rocket::{
     data::{Data, DataStream, ToByteUnit},
     futures::StreamExt,
-    serde::Serialize,
+    serde::{json::Json, Serialize},
     Route,
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::models::{Upload, UploadCell};
@@ -178,6 +179,24 @@ pub async fn list_upload_rows(
     Ok(MoneyMsg::new(GetUploadRowsResponse { cells }))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SubmitUploadRequest {
+    header_selections: Vec<HeaderOption>,
+}
+
+#[post("/<upload_web_id>/submit", data = "<data>")]
+pub async fn submit_upload(
+    db: Db,
+    upload_web_id: &str,
+    data: Json<SubmitUploadRequest>,
+) -> MoneyResult<()> {
+    let uuid = Uuid::parse_str(upload_web_id)?;
+
+    println!("Upload submitted with selections: {:?}", data);
+
+    Ok(MoneyMsg::new(()))
+}
+
 pub fn routes() -> Vec<Route> {
-    routes![add_upload, list_upload_rows]
+    routes![add_upload, list_upload_rows, submit_upload]
 }
