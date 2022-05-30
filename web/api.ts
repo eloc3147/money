@@ -8,6 +8,12 @@ export const HEADER_OPTIONS = [
     "Amount",
 ];
 
+export const REQUIRED_HEADERS = [
+    "Date",
+    "Description",
+    "Amount",
+];
+
 interface MoneyMsg {
     status: string,
     response: any

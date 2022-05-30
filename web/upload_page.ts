@@ -2,7 +2,7 @@ import { el, RedomComponent } from "redom";
 import { Money } from "../money-web/pkg/money_web";
 import { Table, ColumnView, OptionConfig } from "./components";
 import { Page } from "./page";
-import { add_upload, get_upload_rows, HEADER_OPTIONS } from "./api";
+import { add_upload, get_upload_rows, HEADER_OPTIONS, REQUIRED_HEADERS } from "./api";
 
 
 export class UploadPage implements Page {
@@ -140,12 +140,16 @@ class UploadSelect implements RedomComponent {
 
 
 class UploadPreview implements RedomComponent {
-    upload_id: string;
     upload_page: UploadPage;
+
+    upload_id: string;
     header_suggestions: string[];
+    required_headers: string[];
     column_count: number;
-    current_row_count: number;
     upload_row_count: number;
+
+    current_row_count: number;
+    header_selections: string[];
 
     el: HTMLDivElement;
     table: Table;
@@ -162,11 +166,14 @@ class UploadPreview implements RedomComponent {
         row_count: number
     ) {
         this.upload_page = upload_page;
+
         this.upload_id = upload_id;
         this.header_suggestions = header_suggestions;
         this.column_count = headers.length;
-        this.current_row_count = 0;
         this.upload_row_count = row_count;
+
+        this.current_row_count = 0;
+        this.header_selections = this.header_suggestions;
 
         let expanded_suggestions = header_suggestions.map((suggestion) => {
             return HEADER_OPTIONS.map(option => {
@@ -214,6 +221,7 @@ class UploadPreview implements RedomComponent {
         };
 
         this.add_rows();
+        this.check_error();
     }
 
     async add_rows(): Promise<void> {
@@ -221,7 +229,6 @@ class UploadPreview implements RedomComponent {
         let row_count = Math.min(10, remaining_rows);
 
         if (row_count > 0) {
-            console.log("Getting rows", this.current_row_count, row_count);
             let resp = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
             let rows = [];
             for (let i = 0; i < resp.cells.length; i += this.column_count) {
@@ -237,20 +244,26 @@ class UploadPreview implements RedomComponent {
     }
 
     process_update(column_index: number, selection: string): void {
-        this.session.update_header_selection(column_index, selection);
+        this.header_selections[column_index] = selection;
         this.check_error();
     }
 
     check_error(): boolean {
-        let selection_error = this.session.get_selection_error();
-        if (selection_error !== undefined) {
-            this.upload_page.set_error(selection_error);
-            this.submit_wrapper.setAttribute("disabled", "true");
-            return true;
-        } else {
+        let missing_required = [];
+        for (let i in REQUIRED_HEADERS) {
+            if (!this.header_selections.includes(REQUIRED_HEADERS[i])) {
+                missing_required.push(REQUIRED_HEADERS[i]);
+            }
+        }
+
+        if (missing_required.length == 0) {
             this.upload_page.set_error(null);
             this.submit_wrapper.removeAttribute("disabled");
             return false;
+        } else {
+            this.upload_page.set_error(`Missing required headers: ${missing_required.join(", ")}`);
+            this.submit_wrapper.setAttribute("disabled", "true");
+            return true;
         }
     }
 }
