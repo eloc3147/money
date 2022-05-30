@@ -61,15 +61,29 @@ async function api_request(uri: RequestInfo, init_data: RequestInit): Promise<an
 }
 
 export async function add_upload(file_contents: string | ArrayBuffer): Promise<AddUploadResponse> {
-    return await api_request("/api/upload/", { method: "post", body: file_contents }) as AddUploadResponse;
+    return await api_request(
+        "/api/upload/",
+        { method: "post", body: file_contents }
+    ) as AddUploadResponse;
 }
 
-export async function get_upload_rows(upload_id: string, row_index: number, row_count: number): Promise<GetUploadRowsResponse> {
+export async function get_upload_rows(
+    upload_id: string,
+    row_index: number,
+    row_count: number
+): Promise<GetUploadRowsResponse> {
     return await api_request(
         `/api/upload/${upload_id}/rows?` + new URLSearchParams({
             row_index: row_index.toString(),
             row_count: row_count.toString()
         }),
         { method: "get" }
+    ) as GetUploadRowsResponse;
+}
+
+export async function submit_upload(upload_id: string, header_selections: string[]): Promise<GetUploadRowsResponse> {
+    return await api_request(
+        `/api/upload/${upload_id}/submit`,
+        { method: "post", body: JSON.stringify({ header_selections: header_selections }) }
     ) as GetUploadRowsResponse;
 }

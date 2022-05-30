@@ -2,7 +2,7 @@ import { el, RedomComponent } from "redom";
 import { Money } from "../money-web/pkg/money_web";
 import { Table, ColumnView, OptionConfig } from "./components";
 import { Page } from "./page";
-import { add_upload, get_upload_rows, HEADER_OPTIONS, REQUIRED_HEADERS } from "./api";
+import { add_upload, get_upload_rows, HEADER_OPTIONS, REQUIRED_HEADERS, submit_upload } from "./api";
 
 
 export class UploadPage implements Page {
@@ -201,7 +201,7 @@ class UploadPreview implements RedomComponent {
                 ),
                 this.submit_wrapper = el("fieldset",
                     el("div.control",
-                        this.submit_button = el("button", { class: "button is-link" }, "Load file")
+                        this.submit_button = el("button", { class: "button is-link" }, "Submit")
                     )
                 )
             ]),
@@ -212,10 +212,10 @@ class UploadPreview implements RedomComponent {
             this.add_rows();
         };
 
-        this.submit_button.onclick = evt => {
+        this.submit_button.onclick = async evt => {
             evt.preventDefault();
             if (!this.check_error()) {
-                this.session.submit_data();
+                await submit_upload(this.upload_id, this.header_selections);
                 this.upload_page.draw_submitted();
             }
         };
