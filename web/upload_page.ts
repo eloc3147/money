@@ -1,5 +1,5 @@
 import { el, RedomComponent } from "redom";
-import { Table, ColumnView, OptionConfig, Page } from "./components";
+import { Table, ColumnView, OptionConfig, Page, Tr, TdDropdown, Td } from "./components";
 import { add_upload, get_upload_rows, HEADER_OPTIONS, REQUIRED_HEADERS, submit_upload } from "./api";
 
 
@@ -173,12 +173,14 @@ class UploadPreview implements RedomComponent {
             });
         });
 
-        this.table = new Table();
-        this.table.set_headers(headers.map(h => '"' + h + '"'));
-        this.table.set_suggestions(
+        this.table = new Table(headers.map(h => '"' + h + '"'));
+
+        let suggestion_row = new Tr(TdDropdown);
+        suggestion_row.update(
             expanded_suggestions,
-            (column_index, selection) => this.process_update(column_index, selection)
+            { callback: (column_index, selection) => this.process_update(column_index, selection) }
         );
+        this.table.add_rows([suggestion_row]);
 
         this.el = el("div", [
             this.table,
@@ -221,7 +223,9 @@ class UploadPreview implements RedomComponent {
             let resp = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
             let rows = [];
             for (let i = 0; i < resp.cells.length; i += this.column_count) {
-                rows.push(resp.cells.slice(i, i + this.column_count));
+                let row = new Tr(Td);
+                row.update(resp.cells.slice(i, i + this.column_count));
+                rows.push(row);
             }
             this.table.add_rows(rows);
             this.current_row_count += row_count;

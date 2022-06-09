@@ -1,4 +1,14 @@
-import { el, List, list, RedomComponentClass, RedomElement, setChildren, RedomQueryArgument, RedomComponent } from "redom";
+import {
+    el,
+    List,
+    list,
+    RedomComponentClass,
+    RedomElement,
+    setChildren,
+    RedomQueryArgument,
+    RedomComponent,
+    mount
+} from "redom";
 
 
 export class Page implements RedomComponent {
@@ -105,37 +115,23 @@ export class TdDropdown implements RedomComponent {
 
 export class Table implements RedomComponent {
     el: HTMLTableElement;
-    header_row: Tr;
-    dropdown_element: Tr;
-    rows: RedomElement[];
 
-    constructor() {
-        this.header_row = new Tr(Th);
-        this.dropdown_element = new Tr(TdDropdown);
+    constructor(headers: string[] | null) {
+        let rows = [];
 
-        this.rows = [
-            el("thead", this.header_row),
-            this.dropdown_element,
-        ];
-
-        this.el = el("table", this.rows, { class: "table" });
-    }
-
-    set_headers(headers: string[]): void {
-        this.header_row.update(headers);
-    }
-
-    set_suggestions(suggestions: OptionConfig[][], column_callback: (column_index: number, input_text: string) => void): void {
-        this.dropdown_element.update(suggestions, { callback: column_callback });
-    }
-
-    add_rows(rows: any[][]): void {
-        for (let row in rows) {
-            let el = new Tr(Td);
-            el.update(rows[row]);
-            this.rows.push(el);
+        if (headers != null) {
+            let header_row = new Tr(Th);
+            header_row.update(headers);
+            rows.push(el("thead", header_row));
         }
-        setChildren(this.el, this.rows);
+
+        this.el = el("table", rows, { class: "table" });
+    }
+
+    add_rows(rows: Tr[]): void {
+        for (let row in rows) {
+            mount(this.el, rows[row]);
+        }
     }
 }
 
