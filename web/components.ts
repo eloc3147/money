@@ -1,8 +1,10 @@
 import { el, List, list, RedomComponentClass, RedomElement, setChildren, RedomQueryArgument, RedomComponent } from "redom";
 
+
 export class Page implements RedomComponent {
     el: HTMLElement | SVGElement | RedomComponent;
 }
+
 
 export class Th implements RedomComponent {
     el: HTMLTableCellElement;
@@ -16,6 +18,7 @@ export class Th implements RedomComponent {
     }
 }
 
+
 export class Td implements RedomComponent {
     el: HTMLTableCellElement;
 
@@ -27,6 +30,7 @@ export class Td implements RedomComponent {
         this.el.textContent = data;
     }
 }
+
 
 export class Tr implements RedomComponent {
     el: HTMLTableRowElement;
@@ -42,10 +46,12 @@ export class Tr implements RedomComponent {
     }
 }
 
+
 export interface OptionConfig {
     value: string,
     selected: boolean
 }
+
 
 export class Option implements RedomComponent {
     el: HTMLOptionElement;
@@ -60,6 +66,7 @@ export class Option implements RedomComponent {
         this.el.selected = config.selected;
     }
 }
+
 
 export class TdDropdown implements RedomComponent {
     el: HTMLTableCellElement;
@@ -94,6 +101,7 @@ export class TdDropdown implements RedomComponent {
         this.select.update(item);
     }
 }
+
 
 export class Table implements RedomComponent {
     el: HTMLTableElement;
@@ -130,6 +138,7 @@ export class Table implements RedomComponent {
         setChildren(this.el, this.rows);
     }
 }
+
 
 export class ColumnView implements RedomComponent {
     el: HTMLDivElement;

@@ -257,6 +257,7 @@ class UploadPreview implements RedomComponent {
     }
 }
 
+
 class UploadSubmitted implements RedomComponent {
     el: HTMLElement;
 

@@ -77,4 +77,5 @@ function main() {
     mount(document.body, new MoneyApp());
 }
 
+
 main();

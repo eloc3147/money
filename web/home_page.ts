@@ -1,6 +1,7 @@
 import { el } from "redom";
 import { ColumnView, Page } from "./components";
 
+
 export class HomePage implements Page {
     el: ColumnView;
 
