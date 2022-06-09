@@ -1,5 +1,9 @@
 import { el, List, list, RedomComponentClass, RedomElement, setChildren, RedomQueryArgument, RedomComponent } from "redom";
 
+export class Page implements RedomComponent {
+    el: HTMLElement | SVGElement | RedomComponent;
+}
+
 export class Th implements RedomComponent {
     el: HTMLTableCellElement;
 

@@ -1,6 +1,5 @@
 import { el, RedomComponent } from "redom";
-import { Table, ColumnView, OptionConfig } from "./components";
-import { Page } from "./page";
+import { Table, ColumnView, OptionConfig, Page } from "./components";
 import { add_upload, get_upload_rows, HEADER_OPTIONS, REQUIRED_HEADERS, submit_upload } from "./api";
 
 

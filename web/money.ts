@@ -2,7 +2,7 @@ import { el, mount, unmount } from "redom";
 
 import { UploadPage } from "./upload_page";
 import { HomePage } from "./home_page";
-import { Page } from "./page";
+import { Page } from "./components";
 
 
 export class MoneyError extends Error {
