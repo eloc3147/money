@@ -6,4 +6,4 @@ CREATE TABLE upload_cells (
   column_num BIGINT NOT NULL,
   contents TEXT NOT NULL,
   CONSTRAINT fk_upload FOREIGN KEY(upload_id) REFERENCES uploads(id)
-)
+);

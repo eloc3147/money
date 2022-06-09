@@ -1,1 +1,1 @@
-DROP TABLE upload_cells
+DROP TABLE upload_cells;
