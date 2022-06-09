@@ -66,25 +66,20 @@ export class UploadPage implements Page {
         }
     }
 
-    load_file(file: File) {
-        let reader = new FileReader();
-        reader.onloadend = async (_E) => {
-            await add_upload(reader.result)
-                .then((resp) => {
-                    this.set_error(null);
-                    this.subtitle.innerText = "Select the types of each column";
+    async load_file(file: File) {
+        await add_upload(file)
+            .then((resp) => {
+                this.set_error(null);
+                this.subtitle.innerText = "Select the types of each column";
 
-                    this.el.set_column_args("is-full");
-                    this.el.set_contents([
-                        this.title,
-                        this.subtitle,
-                        this.error_box,
-                        new UploadPreview(this, resp.upload_id, resp.headers, resp.header_suggestions, resp.row_count)
-                    ])
-                })
-        };
-
-        reader.readAsArrayBuffer(file);
+                this.el.set_column_args("is-full");
+                this.el.set_contents([
+                    this.title,
+                    this.subtitle,
+                    this.error_box,
+                    new UploadPreview(this, resp.upload_id, resp.headers, resp.header_suggestions, resp.row_count)
+                ])
+            })
     }
 
     draw_submitted() {
@@ -119,7 +114,7 @@ class UploadSelect implements RedomComponent {
             )
         ]);
 
-        this.load_button.onclick = (evt) => {
+        this.load_button.onclick = async (evt) => {
             evt.preventDefault();
 
             if (this.file_field.files.length != 1) {
@@ -128,7 +123,7 @@ class UploadSelect implements RedomComponent {
                 this.upload_page.set_error(null);
             }
 
-            this.upload_page.load_file(this.file_field.files[0]);
+            await this.upload_page.load_file(this.file_field.files[0]);
         };
     }
 }

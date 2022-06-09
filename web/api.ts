@@ -77,8 +77,8 @@ async function api_get(endpoint: string, parameters?: Record<string, string>): P
     return await api_request(endpoint, { method: "get" });
 }
 
-export async function add_upload(file_contents: string | ArrayBuffer): Promise<AddUploadResponse> {
-    return await api_post("upload/", file_contents, "text/plain") as AddUploadResponse;
+export async function add_upload(file: File): Promise<AddUploadResponse> {
+    return await api_post("upload/", file, "application/octet-stream") as AddUploadResponse;
 }
 
 export async function get_upload_rows(
