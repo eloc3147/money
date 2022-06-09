@@ -35,7 +35,6 @@ class MoneyApiError extends MoneyError {
     }
 }
 
-
 export interface AddUploadResponse {
     upload_id: string,
     headers: string[],
@@ -47,24 +46,39 @@ export interface GetUploadRowsResponse {
     cells: string[]
 }
 
-async function api_request(uri: RequestInfo, init_data: RequestInit): Promise<any> {
-    let resp = await fetch(uri, init_data)
+async function api_request(endpoint: RequestInfo, init_data: RequestInit): Promise<any> {
+    let resp = await fetch("/api/" + endpoint, init_data)
         .then(async (resp) => await resp.json() as MoneyResponse);
 
     if (resp.status == "ok") {
         return (resp as MoneyMsg).response;
     } else if (resp.status == "error") {
-        throw new MoneyApiError((resp as MoneyErrorMsg).msg, uri)
+        throw new MoneyApiError((resp as MoneyErrorMsg).msg, endpoint)
     } else {
-        throw new MoneyApiError(`Unexpected response status: ${resp.status}`, uri)
+        throw new MoneyApiError(`Unexpected response status: ${resp.status}`, endpoint)
     }
 }
 
-export async function add_upload(file_contents: string | ArrayBuffer): Promise<AddUploadResponse> {
+async function api_post(endpoint: RequestInfo, body: BodyInit | null, content_type: string): Promise<any> {
     return await api_request(
-        "/api/upload/",
-        { method: "post", body: file_contents }
-    ) as AddUploadResponse;
+        endpoint, { method: "post", body: body, headers: new Headers({ "content-type": content_type }) }
+    );
+}
+
+async function api_json_post(endpoint: RequestInfo, body: any): Promise<any> {
+    return await api_post(endpoint, JSON.stringify(body), "application/json");
+}
+
+async function api_get(endpoint: string, parameters?: Record<string, string>): Promise<any> {
+    if (typeof parameters !== 'undefined') {
+        endpoint += "?" + new URLSearchParams(parameters);
+    }
+
+    return await api_request(endpoint, { method: "get" });
+}
+
+export async function add_upload(file_contents: string | ArrayBuffer): Promise<AddUploadResponse> {
+    return await api_post("upload/", file_contents, "text/plain") as AddUploadResponse;
 }
 
 export async function get_upload_rows(
@@ -72,18 +86,13 @@ export async function get_upload_rows(
     row_index: number,
     row_count: number
 ): Promise<GetUploadRowsResponse> {
-    return await api_request(
-        `/api/upload/${upload_id}/rows?` + new URLSearchParams({
-            row_index: row_index.toString(),
-            row_count: row_count.toString()
-        }),
-        { method: "get" }
+    return await api_get(
+        `upload/${upload_id}/rows`, { row_index: row_index.toString(), row_count: row_count.toString() }
     ) as GetUploadRowsResponse;
 }
 
 export async function submit_upload(upload_id: string, header_selections: string[]): Promise<GetUploadRowsResponse> {
-    return await api_request(
-        `/api/upload/${upload_id}/submit`,
-        { method: "post", body: JSON.stringify({ header_selections: header_selections }) }
+    return await api_json_post(
+        `upload/${upload_id}/submit`, { header_selections: header_selections }
     ) as GetUploadRowsResponse;
 }
