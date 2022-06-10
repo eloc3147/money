@@ -11,11 +11,8 @@ mod error;
 mod models;
 mod schema;
 
-use rocket::{fairing::AdHoc, fs::FileServer, Build, Request, Rocket};
+use rocket::{fairing::AdHoc, fs::FileServer, Build, Rocket};
 use rocket_sync_db_pools::database;
-
-use components::MoneyResult;
-use error::MoneyError;
 
 #[database("money")]
 pub struct Db(diesel::PgConnection);
