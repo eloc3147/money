@@ -80,9 +80,9 @@ export class Option implements RedomComponent {
 
 export class TdDropdown implements RedomComponent {
     el: HTMLTableCellElement;
-    column_index: number;
+    column_index: number | null;
     select: List;
-    callback: (column_index: number, input_text: string) => void;
+    callback: ((column_index: number, input_text: string) => void) | null;
 
     constructor() {
         this.column_index = null;
@@ -100,7 +100,7 @@ export class TdDropdown implements RedomComponent {
         let index = (this.select.el as HTMLSelectElement).selectedIndex;
         let input_text = this.select.el.children[index].innerHTML.trim();
 
-        if (this.callback != null) {
+        if (this.callback != null && this.column_index != null) {
             this.callback(this.column_index, input_text);
         }
     }
@@ -117,7 +117,7 @@ export class Table implements RedomComponent {
     el: HTMLTableElement;
 
     constructor(headers: string[] | null) {
-        let rows = [];
+        let rows: HTMLTableSectionElement[] = [];
 
         if (headers != null) {
             let header_row = new Tr(Th);
