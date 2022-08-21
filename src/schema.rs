@@ -1,4 +1,11 @@
 table! {
+    accounts (id) {
+        id -> Int4,
+        account_name -> Text,
+    }
+}
+
+table! {
     upload_cells (id) {
         id -> Int4,
         upload_id -> Int4,
@@ -21,6 +28,7 @@ table! {
 joinable!(upload_cells -> uploads (upload_id));
 
 allow_tables_to_appear_in_same_query!(
+    accounts,
     upload_cells,
     uploads,
 );

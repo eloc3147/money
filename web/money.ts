@@ -3,6 +3,7 @@ import { el, mount, unmount } from "redom";
 import { UploadPage } from "./upload_page";
 import { HomePage } from "./home_page";
 import { Page } from "./components";
+import { AccountsPage } from "./accounts_page";
 
 
 export class MoneyError extends Error {
@@ -40,6 +41,7 @@ class MoneyApp {
     constructor() {
         this.page_map = {
             "Home": new HomePage(),
+            "Accounts": new AccountsPage(),
             "Upload": new UploadPage()
         };
         this.navbar_items = [];

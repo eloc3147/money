@@ -1,4 +1,5 @@
-pub mod upload;
+mod account;
+mod upload;
 
 use rocket::fairing::AdHoc;
 use rocket::Request;
@@ -18,5 +19,6 @@ pub fn stage() -> AdHoc {
         rocket
             .register("/api/", catchers![not_found])
             .mount("/api/upload", upload::routes())
+            .mount("/api/account", account::routes())
     })
 }

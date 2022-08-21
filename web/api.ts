@@ -42,19 +42,7 @@ class MoneyApiError extends MoneyError {
 }
 
 
-export interface AddUploadResponse {
-    upload_id: string,
-    headers: string[],
-    header_suggestions: string[],
-    row_count: number
-}
-
-
-export interface GetUploadRowsResponse {
-    cells: string[]
-}
-
-
+// Base functions
 async function api_request(endpoint: RequestInfo, init_data: RequestInit): Promise<any> {
     let resp = await fetch("/api/" + endpoint, init_data)
         .then(async (resp) => await resp.json() as MoneyResponse);
@@ -90,10 +78,22 @@ async function api_get(endpoint: string, parameters?: Record<string, string>): P
 }
 
 
+// Upload endpoints
+export interface AddUploadResponse {
+    upload_id: string,
+    headers: string[],
+    header_suggestions: string[],
+    row_count: number
+}
+
 export async function add_upload(file: File): Promise<AddUploadResponse> {
     return await api_post("upload/", file, "application/octet-stream") as AddUploadResponse;
 }
 
+
+export interface GetUploadRowsResponse {
+    cells: string[]
+}
 
 export async function get_upload_rows(
     upload_id: string,
@@ -105,9 +105,22 @@ export async function get_upload_rows(
     ) as GetUploadRowsResponse;
 }
 
+export interface GetUploadRowsResponse {
+    rows: string[]
+}
 
 export async function submit_upload(upload_id: string, header_selections: string[]): Promise<GetUploadRowsResponse> {
     return await api_json_post(
         `upload/${upload_id}/submit`, { header_selections: header_selections }
     ) as GetUploadRowsResponse;
+}
+
+
+// Account endpoints
+export interface ListAccountsResponse {
+    accounts: string[]
+}
+
+export async function get_accounts(): Promise<ListAccountsResponse> {
+    return await api_get("account/") as ListAccountsResponse;
 }

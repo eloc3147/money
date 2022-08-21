@@ -3,7 +3,7 @@ use rocket_sync_db_pools::diesel;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::schema::{upload_cells, uploads};
+use crate::schema::{accounts, upload_cells, uploads};
 
 #[derive(Debug, Clone, Deserialize, Serialize, Insertable, Associations)]
 #[belongs_to(Upload)]
@@ -41,4 +41,17 @@ pub struct Upload {
     pub web_id: Uuid,
     pub row_count: i64,
     pub column_count: i64,
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[table_name = "accounts"]
+pub struct AccountInsert {
+    pub account_name: String,
+}
+
+#[derive(Identifiable, Debug, Clone, Deserialize, Serialize, Queryable)]
+#[table_name = "accounts"]
+pub struct Account {
+    pub id: i32,
+    pub account_name: String,
 }

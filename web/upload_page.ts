@@ -47,6 +47,8 @@ export class UploadPage implements Page {
     }
 
     onremount() {
+        this.el.set_column_args("is-half");
+
         this.el.set_contents([
             this.title,
             this.subtitle,

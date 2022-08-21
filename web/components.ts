@@ -128,9 +128,21 @@ export class Table implements RedomComponent {
         this.el = el("table", rows, { class: "table" });
     }
 
+    add_row(row: Tr) {
+        mount(this.el, row);
+    }
+
     add_rows(rows: Tr[]): void {
         for (let row in rows) {
-            mount(this.el, rows[row]);
+            this.add_row(rows[row]);
+        }
+    }
+
+    add_plain_rows(rows: string[][] | number[][]): void {
+        for (let row in rows) {
+            let row_el = new Tr(Td);
+            row_el.update(rows[row]);
+            this.add_row(row_el);
         }
     }
 }
