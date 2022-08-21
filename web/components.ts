@@ -115,20 +115,31 @@ export class TdDropdown implements RedomComponent {
 
 export class Table implements RedomComponent {
     el: HTMLTableElement;
+    header_row: Tr | null;
 
     constructor(headers: string[] | null) {
         let rows: HTMLTableSectionElement[] = [];
 
         if (headers != null) {
-            let header_row = new Tr(Th);
-            header_row.update(headers);
-            rows.push(el("thead", header_row));
+            this.header_row = new Tr(Th);
+            this.header_row.update(headers);
+            rows.push(el("thead", this.header_row));
+        } else {
+            this.header_row = null;
         }
 
         this.el = el("table", rows, { class: "table" });
     }
 
-    add_row(row: Tr) {
+    clear_rows(): void {
+        if (this.header_row != null) {
+            setChildren(this.el, [this.header_row]);
+        } else {
+            setChildren(this.el, []);
+        }
+    }
+
+    add_row(row: Tr): void {
         mount(this.el, row);
     }
 

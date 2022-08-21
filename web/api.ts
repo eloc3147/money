@@ -124,3 +124,7 @@ export interface ListAccountsResponse {
 export async function get_accounts(): Promise<ListAccountsResponse> {
     return await api_get("account/") as ListAccountsResponse;
 }
+
+export async function add_account(name: string): Promise<void> {
+    await api_json_post("account/", { name: name });
+}

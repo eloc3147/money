@@ -57,7 +57,7 @@ export class UploadPage implements Page {
         ]);
     }
 
-    set_error(error_msg: string) {
+    set_error(error_msg: string | null) {
         if (error_msg !== null) {
             this.error_label.textContent = error_msg;
             this.error_label.className = "message-body";
