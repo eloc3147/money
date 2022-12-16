@@ -1,7 +1,6 @@
 use std::fmt;
 
 use csv_async;
-use diesel;
 use rocket::{
     http::Status,
     request::Request,
@@ -20,22 +19,24 @@ struct MoneyErrorMsg {
 #[derive(Debug)]
 pub enum MoneyError {
     IoError(std::io::Error),
-    DbError(diesel::result::Error),
     CsvError(csv_async::Error),
     MissingEndpoint(String),
     InvalidUuid(uuid::Error),
-    RowIndex(u64),
+    RowIndex(usize),
+    AccountAlreadyExists,
+    NotFound,
 }
 
 impl MoneyError {
     pub fn msg(&self) -> &'static str {
         match self {
             MoneyError::IoError(_) => "I/O Error",
-            MoneyError::DbError(_) => "Database Error",
             MoneyError::CsvError(_) => "CSV Parsing Error",
             MoneyError::MissingEndpoint(_) => "Endpoint not found",
             MoneyError::InvalidUuid(_) => "Invalid UUID",
             MoneyError::RowIndex(_) => "Requested row does not exist",
+            MoneyError::AccountAlreadyExists => "Account with that name already exists",
+            MoneyError::NotFound => "The requested item was not found",
         }
     }
 
@@ -53,11 +54,11 @@ impl fmt::Display for MoneyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             MoneyError::IoError(e) => write!(f, "{}: {}", self.msg(), e),
-            MoneyError::DbError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::CsvError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::MissingEndpoint(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::InvalidUuid(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::RowIndex(r) => write!(f, "{}: {}", self.msg(), r),
+            MoneyError::AccountAlreadyExists | MoneyError::NotFound => write!(f, "{}", self.msg()),
         }
     }
 }
@@ -79,12 +80,6 @@ impl<'r> Responder<'r, 'static> for MoneyError {
 impl From<std::io::Error> for MoneyError {
     fn from(error: std::io::Error) -> MoneyError {
         MoneyError::IoError(error)
-    }
-}
-
-impl From<diesel::result::Error> for MoneyError {
-    fn from(error: diesel::result::Error) -> MoneyError {
-        MoneyError::DbError(error)
     }
 }
 

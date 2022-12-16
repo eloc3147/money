@@ -1,15 +1,10 @@
-use diesel::RunQueryDsl;
 use rocket::{
     serde::{json::Json, Deserialize, Serialize},
-    Route,
+    Route, State,
 };
 
-use crate::models::{Account, AccountInsert};
-use crate::Db;
-use crate::{
-    components::{MoneyMsg, MoneyResult},
-    error::Result,
-};
+use crate::components::{MoneyMsg, MoneyResult};
+use crate::data_store::SharedDataStore;
 
 #[derive(Debug, Serialize)]
 pub struct ListAccountsResponse {
@@ -17,21 +12,9 @@ pub struct ListAccountsResponse {
 }
 
 #[get("/")]
-pub async fn list_accounts(db: Db) -> MoneyResult<ListAccountsResponse> {
-    let accounts = db
-        .run(move |conn| -> Result<Vec<String>> {
-            use crate::schema::accounts::dsl::accounts;
-            use diesel::prelude::*;
-
-            let account_list = accounts.load::<Account>(conn)?;
-            let mut account_names = Vec::with_capacity(account_list.len());
-            for account in account_list {
-                account_names.push(account.account_name);
-            }
-
-            Ok(account_names)
-        })
-        .await?;
+pub async fn list_accounts(ds: &State<SharedDataStore>) -> MoneyResult<ListAccountsResponse> {
+    let guard = ds.lock().await;
+    let accounts = guard.list_accounts();
 
     Ok(MoneyMsg::new(ListAccountsResponse { accounts }))
 }
@@ -42,21 +25,14 @@ struct AddAccountRequest {
 }
 
 #[post("/", data = "<account>")]
-async fn add_account(db: Db, account: Json<AddAccountRequest>) -> MoneyResult<()> {
-    let account_name = account.name.trim().to_owned();
+async fn add_account(
+    ds: &State<SharedDataStore>,
+    account: Json<AddAccountRequest>,
+) -> MoneyResult<()> {
+    let account_name = account.name.trim();
 
-    db.run(
-        move |conn| -> std::result::Result<(), diesel::result::Error> {
-            use crate::schema::accounts::dsl::accounts;
-
-            diesel::insert_into(accounts)
-                .values(AccountInsert { account_name })
-                .get_result::<Account>(conn)?;
-
-            Ok(())
-        },
-    )
-    .await?;
+    let mut guard = ds.lock().await;
+    guard.add_account(account_name)?;
 
     Ok(MoneyMsg::new(()))
 }

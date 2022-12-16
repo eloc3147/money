@@ -1,64 +1,39 @@
 use csv_async::{self, AsyncReader};
-use diesel::{prelude::*, Connection, RunQueryDsl};
 use rocket::{
     data::{Data, DataStream, ToByteUnit},
     futures::StreamExt,
     serde::{json::Json, Serialize},
-    Route,
+    Route, State,
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::models::{Upload, UploadCell};
-use crate::Db;
-use crate::{
-    components::{HeaderOption, MoneyMsg, MoneyResult},
-    error::{MoneyError, Result},
-    models::{UploadCellInsert, UploadInsert},
-};
+use crate::components::{HeaderOption, MoneyMsg, MoneyResult};
+use crate::data_store::SharedDataStore;
+use crate::error::Result;
 
 pub struct CsvFile {
     headers: Vec<String>,
-    cells: Vec<UploadCellInsert>,
+    cells: Vec<String>,
     row_count: usize,
-    column_count: usize,
 }
 
-async fn parse_csv(stream: DataStream<'_>, upload_id: i32) -> Result<CsvFile> {
+async fn parse_csv(stream: DataStream<'_>) -> Result<CsvFile> {
     let mut reader = AsyncReader::from_reader(stream);
-    let mut headers = Vec::new();
+
+    let headers: Vec<String> = reader.headers().await?.iter().map(str::to_string).collect();
     let mut cells = Vec::new();
 
-    for (column_num, cell) in reader.headers().await?.iter().enumerate() {
-        headers.push(cell.to_string());
-        cells.push(UploadCellInsert {
-            upload_id,
-            header: true,
-            row_num: 0,
-            column_num: column_num as i64,
-            contents: cell.to_string(),
-        });
-    }
-
-    let mut records = reader.records().enumerate();
-
-    let mut row_count: usize = 0;
-    while let Some((row_num, row)) = records.next().await {
-        for (column_num, cell) in row?.iter().enumerate() {
-            cells.push(UploadCellInsert {
-                upload_id,
-                header: false,
-                row_num: row_num as i64,
-                column_num: column_num as i64,
-                contents: cell.to_string(),
-            });
+    let mut row_count = 0usize;
+    let mut records = reader.records();
+    while let Some(row) = records.next().await {
+        for cell in row?.iter() {
+            cells.push(cell.to_string());
         }
-
         row_count += 1;
     }
 
     Ok(CsvFile {
-        column_count: headers.len(),
         headers,
         cells,
         row_count,
@@ -74,45 +49,13 @@ pub struct AddUploadResponse {
 }
 
 #[post("/", data = "<file>")]
-async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
+async fn add_upload(ds: &State<SharedDataStore>, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
     let file_stream = file.open(10u8.mebibytes());
+    let parsed = parse_csv(file_stream).await?;
 
-    let (upload_id, web_id) = db
-        .run(
-            move |conn| -> std::result::Result<(i32, Uuid), diesel::result::Error> {
-                use crate::schema::uploads::dsl::*;
-
-                let wid = Uuid::new_v4();
-                let uid = diesel::insert_into(uploads)
-                    .values(UploadInsert { web_id: wid })
-                    .get_result::<Upload>(conn)?
-                    .id;
-
-                Ok((uid, wid))
-            },
-        )
-        .await?;
-
-    let parsed = parse_csv(file_stream, upload_id).await?;
-
-    db.run(move |conn| {
-        conn.transaction::<_, diesel::result::Error, _>(|| {
-            use crate::schema::upload_cells::dsl::upload_cells;
-            use crate::schema::uploads::dsl::{column_count, row_count, uploads};
-
-            diesel::insert_into(upload_cells)
-                .values(parsed.cells)
-                .execute(conn)?;
-
-            diesel::update(uploads.find(upload_id))
-                .set((
-                    row_count.eq(parsed.row_count as i64),
-                    column_count.eq(parsed.column_count as i64),
-                ))
-                .execute(conn)
-        })
-    })
-    .await?;
+    let mut guard = ds.lock().await;
+    let upload_id =
+        guard.add_pending_upload(parsed.headers.clone(), parsed.cells, parsed.row_count);
 
     let header_suggestions = parsed
         .headers
@@ -121,7 +64,7 @@ async fn add_upload(db: Db, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
         .collect();
 
     Ok(MoneyMsg::new(AddUploadResponse {
-        upload_id: web_id,
+        upload_id,
         headers: parsed.headers,
         header_suggestions,
         row_count: parsed.row_count,
@@ -133,49 +76,16 @@ pub struct GetUploadRowsResponse {
     cells: Vec<String>,
 }
 
-#[get("/<upload_web_id>/rows?<row_index>&<row_count>")]
+#[get("/<upload_id>/rows?<row_index>&<row_count>")]
 pub async fn list_upload_rows(
-    db: Db,
-    upload_web_id: &str,
-    row_index: u64,
-    row_count: u64,
+    ds: &State<SharedDataStore>,
+    upload_id: &str,
+    row_index: usize,
+    row_count: usize,
 ) -> MoneyResult<GetUploadRowsResponse> {
-    let uuid = Uuid::parse_str(upload_web_id)?;
-
-    let cells = db
-        .run(move |conn| -> Result<Vec<String>> {
-            use crate::schema::upload_cells::dsl::{column_num, header, row_num};
-            use crate::schema::uploads::dsl::{uploads, web_id};
-            use diesel::prelude::*;
-
-            // TODO: Can we make this 1 query?
-            let upload_session = uploads.filter(web_id.eq(uuid)).first::<Upload>(conn)?;
-
-            if row_index as i64 > upload_session.row_count {
-                return Err(MoneyError::RowIndex(row_index));
-            } else if (row_index + row_count) as i64 > upload_session.row_count {
-                return Err(MoneyError::RowIndex(row_index + row_count));
-            }
-
-            let cells = UploadCell::belonging_to(&upload_session)
-                .filter(
-                    row_num
-                        .ge(row_index as i64)
-                        .and(row_num.lt((row_index + row_count) as i64))
-                        .and(header.eq(false)),
-                )
-                .order((row_num.asc(), column_num.asc()))
-                .load::<UploadCell>(conn)?;
-
-            let mut cell_values = Vec::with_capacity(cells.len());
-            for cell in cells {
-                cell_values.push(cell.contents);
-            }
-
-            Ok(cell_values)
-        })
-        .await?;
-
+    let uuid = Uuid::parse_str(upload_id)?;
+    let guard = ds.lock().await;
+    let cells = guard.get_pending_upload_rows(uuid, row_index, row_count)?;
     Ok(MoneyMsg::new(GetUploadRowsResponse { cells }))
 }
 
@@ -186,7 +96,6 @@ pub struct SubmitUploadRequest {
 
 #[post("/<upload_web_id>/submit", data = "<data>")]
 pub async fn submit_upload(
-    db: Db,
     upload_web_id: &str,
     data: Json<SubmitUploadRequest>,
 ) -> MoneyResult<()> {

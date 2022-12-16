@@ -1,38 +1,21 @@
 #[macro_use]
 extern crate rocket;
-#[macro_use]
-extern crate diesel;
-#[macro_use]
-extern crate diesel_migrations;
 
 mod api;
 mod components;
+mod data_store;
 mod error;
-mod models;
-mod schema;
 
-use rocket::{fairing::AdHoc, fs::FileServer, Build, Rocket};
-use rocket_sync_db_pools::database;
+use std::path::PathBuf;
 
-#[database("money")]
-pub struct Db(diesel::PgConnection);
-
-async fn run_migrations(rocket: Rocket<Build>) -> Rocket<Build> {
-    embed_migrations!("migrations");
-
-    let conn = Db::get_one(&rocket).await.expect("database connection");
-    conn.run(|c| embedded_migrations::run(c))
-        .await
-        .expect("diesel migrations");
-
-    rocket
-}
+use rocket::fs::FileServer;
 
 #[launch]
 fn rocket() -> _ {
+    let data = data_store::DataStore::load(&PathBuf::new());
+
     rocket::build()
-        .attach(Db::fairing())
         .attach(api::stage())
-        .attach(AdHoc::on_ignite("Database Migrations", run_migrations))
+        .manage(data)
         .mount("/", FileServer::from("static"))
 }

@@ -1,11 +1,5 @@
 ## defaults for _all_ profiles
 [default]
 address = "127.0.0.1"
-limits = {forms = "64 kB", json = "10 MiB"}
+limits = { forms = "64 kB", json = "10 MiB" }
 port = 9234
-
-[global.databases]
-# I know I'm comitting a credential here.
-# This DB is only hosted locally.
-# Don't @ me
-money = {url = "postgres://money_service:8ykrX4e7hjAbnceJTTyqV3CjKBYvbNiFmxVLHanvCyz7XXdtvwpJXsUDXcNQNnUc@localhost/money"}

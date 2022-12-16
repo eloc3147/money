@@ -2,22 +2,19 @@
 authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
 edition = "2021"
 name = "money"
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
 anyhow = "1.0"
 dotenv = "0.15.0"
-serde = {version = "1.0", features = ["derive"]}
+serde = { version = "1.0", features = ["derive"] }
 
-# Must stay at 0.8.2 until diesel support for 1.1 lands, and rocket_sync_db_pools support for that diesel version
-uuid = {version = "0.8.2", features = ["serde", "v4"]}
+uuid = { version = "1.2.2", features = ["serde", "v4"] }
 yansi = "0.5.1"
 
-diesel = {version = "1.4.8", features = ["postgres", "r2d2", "uuidv07"]}
-diesel_migrations = "1.4"
-rocket = {version = "0.5.0-rc.2", features = ["json", "uuid"]}
-rocket_sync_db_pools = {version = "0.1.0-rc.2", default-features = false, features = ["diesel_postgres_pool"]}
+rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
 tokio = "1.18.2"
 tokio-stream = "0.1"
+async-mutex = "1.4.0"
 
-csv-async = {version = "1.1", default_features = false, features = ["tokio"]}
+csv-async = { version = "1.1", default_features = false, features = ["tokio"] }
