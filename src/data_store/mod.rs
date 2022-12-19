@@ -1,35 +1,38 @@
+mod schema;
+
 use async_mutex::Mutex;
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 use uuid::Uuid;
 
-use crate::error::MoneyError;
+use crate::error::{MoneyError, Result};
+use schema::{load_data, Account, Data, PendingUpload};
 
 pub type SharedDataStore = Mutex<DataStore>;
 
 pub struct DataStore {
-    pending_uploads: HashMap<Uuid, PendingUpload>,
-    accounts: HashMap<String, Account>,
+    inner: Data,
 }
 
 impl DataStore {
-    pub fn load(data_dir: &Path) -> SharedDataStore {
-        let data = DataStore {
-            accounts: HashMap::new(),
-            pending_uploads: HashMap::new(),
-        };
-        SharedDataStore::new(data)
+    pub async fn load(data_dir: &Path) -> Result<SharedDataStore> {
+        let inner = load_data(data_dir).await?;
+        Ok(SharedDataStore::new(DataStore { inner }))
     }
 
     pub fn list_accounts(&self) -> Vec<String> {
-        self.accounts.keys().map(String::to_owned).collect()
+        self.inner.accounts.keys().map(String::to_owned).collect()
     }
 
-    pub fn add_account(&mut self, account_name: &str) -> Result<(), MoneyError> {
-        if self.accounts.contains_key(account_name) {
+    pub fn add_account(&mut self, account_name: &str) -> Result<()> {
+        if self.inner.accounts.contains_key(account_name) {
             return Err(crate::error::MoneyError::AccountAlreadyExists);
         }
         let account = Account::new(account_name.to_string());
-        if let Some(_) = self.accounts.insert(account_name.to_string(), account) {
+        if let Some(_) = self
+            .inner
+            .accounts
+            .insert(account_name.to_string(), account)
+        {
             panic!("The account list was modified while locked")
         }
         Ok(())
@@ -43,7 +46,7 @@ impl DataStore {
     ) -> Uuid {
         let upload_id = loop {
             let id = Uuid::new_v4();
-            if !self.pending_uploads.contains_key(&id) {
+            if !self.inner.pending_uploads.contains_key(&id) {
                 break id;
             }
         };
@@ -54,6 +57,7 @@ impl DataStore {
             row_count,
         };
         if let Some(_) = self
+            .inner
             .pending_uploads
             .insert(upload_id.clone(), pending_upload)
         {
@@ -68,8 +72,8 @@ impl DataStore {
         upload_id: Uuid,
         row_index: usize,
         row_count: usize,
-    ) -> Result<Vec<String>, MoneyError> {
-        let upload = match self.pending_uploads.get(&upload_id) {
+    ) -> Result<Vec<String>> {
+        let upload = match self.inner.pending_uploads.get(&upload_id) {
             Some(u) => u,
             None => return Err(MoneyError::NotFound),
         };
@@ -85,24 +89,4 @@ impl DataStore {
         let cells = upload.cells[start..end].to_vec();
         Ok(cells)
     }
-}
-
-pub struct Account {
-    account_name: String,
-    transactions: Vec<bool>,
-}
-
-impl Account {
-    pub fn new(account_name: String) -> Account {
-        Account {
-            account_name,
-            transactions: Vec::new(),
-        }
-    }
-}
-
-struct PendingUpload {
-    headers: Vec<String>,
-    cells: Vec<String>,
-    row_count: usize,
 }

@@ -2,6 +2,7 @@ use std::fmt;
 
 use csv_async;
 use rocket::{
+    self,
     http::Status,
     request::Request,
     response::{self, Responder},
@@ -23,8 +24,11 @@ pub enum MoneyError {
     MissingEndpoint(String),
     InvalidUuid(uuid::Error),
     RowIndex(usize),
+    DataCorrupted(&'static str),
+    ServerError(rocket::Error),
     AccountAlreadyExists,
     NotFound,
+    OperationCancelled,
 }
 
 impl MoneyError {
@@ -37,6 +41,9 @@ impl MoneyError {
             MoneyError::RowIndex(_) => "Requested row does not exist",
             MoneyError::AccountAlreadyExists => "Account with that name already exists",
             MoneyError::NotFound => "The requested item was not found",
+            MoneyError::DataCorrupted(_) => "Error loading data",
+            MoneyError::ServerError(_) => "Web server error",
+            MoneyError::OperationCancelled => "A background task was cancelled",
         }
     }
 
@@ -45,6 +52,7 @@ impl MoneyError {
             MoneyError::CsvError(e) => Some(e.to_string()),
             MoneyError::MissingEndpoint(endpoint) => Some(endpoint.clone()),
             MoneyError::RowIndex(row) => Some(row.to_string()),
+            MoneyError::DataCorrupted(s) => Some(s.to_string()),
             _ => None,
         }
     }
@@ -58,7 +66,11 @@ impl fmt::Display for MoneyError {
             MoneyError::MissingEndpoint(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::InvalidUuid(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::RowIndex(r) => write!(f, "{}: {}", self.msg(), r),
-            MoneyError::AccountAlreadyExists | MoneyError::NotFound => write!(f, "{}", self.msg()),
+            MoneyError::DataCorrupted(s) => write!(f, "{}: {}", self.msg(), s),
+            MoneyError::ServerError(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::AccountAlreadyExists
+            | MoneyError::NotFound
+            | MoneyError::OperationCancelled => write!(f, "{}", self.msg()),
         }
     }
 }
@@ -99,6 +111,12 @@ impl From<csv_async::Error> for MoneyError {
 impl From<uuid::Error> for MoneyError {
     fn from(error: uuid::Error) -> MoneyError {
         MoneyError::InvalidUuid(error)
+    }
+}
+
+impl From<rocket::Error> for MoneyError {
+    fn from(error: rocket::Error) -> Self {
+        MoneyError::ServerError(error)
     }
 }
 

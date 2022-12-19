@@ -94,12 +94,9 @@ pub struct SubmitUploadRequest {
     header_selections: Vec<HeaderOption>,
 }
 
-#[post("/<upload_web_id>/submit", data = "<data>")]
-pub async fn submit_upload(
-    upload_web_id: &str,
-    data: Json<SubmitUploadRequest>,
-) -> MoneyResult<()> {
-    let uuid = Uuid::parse_str(upload_web_id)?;
+#[post("/<upload_id>/submit", data = "<data>")]
+pub async fn submit_upload(upload_id: &str, data: Json<SubmitUploadRequest>) -> MoneyResult<()> {
+    let uuid = Uuid::parse_str(upload_id)?;
 
     println!("Upload submitted with selections: {:?}", data);
 
