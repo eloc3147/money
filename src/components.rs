@@ -3,6 +3,7 @@ use rocket::{
     response::{self, Responder},
     serde::{json::Json, Deserialize, Serialize},
 };
+use serde::{de::Visitor, Deserializer};
 
 use crate::error::MoneyError;
 
@@ -30,14 +31,13 @@ impl<'r, T: Serialize> Responder<'r, 'static> for MoneyMsg<T> {
 
 pub type MoneyResult<T> = std::result::Result<MoneyMsg<T>, MoneyError>;
 
-#[derive(Clone, PartialEq, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HeaderOption {
     #[serde(rename = "-")]
     Unused,
     Date,
     Name,
-    #[serde(alias = "memo")]
     Description,
     Amount,
 }
@@ -51,5 +51,31 @@ impl HeaderOption {
             "amount" => HeaderOption::Amount,
             _ => HeaderOption::Unused,
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for HeaderOption {
+    fn deserialize<D>(deserializer: D) -> Result<HeaderOption, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(HeaderOptionVisitor)
+    }
+}
+
+struct HeaderOptionVisitor;
+
+impl<'de> Visitor<'de> for HeaderOptionVisitor {
+    type Value = HeaderOption;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a string header name")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(HeaderOption::from_str(value))
     }
 }
