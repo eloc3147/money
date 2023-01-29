@@ -53,9 +53,10 @@ async fn add_upload(ds: &State<SharedDataStore>, file: Data<'_>) -> MoneyResult<
     let file_stream = file.open(10u8.mebibytes());
     let parsed = parse_csv(file_stream).await?;
 
-    let mut guard = ds.lock().await;
-    let upload_id =
-        guard.add_pending_upload(parsed.headers.clone(), parsed.cells, parsed.row_count);
+    let upload_id = {
+        let mut guard = ds.lock().await;
+        guard.add_pending_upload(parsed.headers.clone(), parsed.cells, parsed.row_count)
+    };
 
     let header_suggestions = parsed
         .headers
@@ -84,8 +85,10 @@ pub async fn list_upload_rows(
     row_count: usize,
 ) -> MoneyResult<GetUploadRowsResponse> {
     let uuid = Uuid::parse_str(upload_id)?;
-    let guard = ds.lock().await;
-    let cells = guard.get_pending_upload_rows(uuid, row_index, row_count)?;
+    let cells = {
+        let guard = ds.lock().await;
+        guard.get_pending_upload_rows(uuid, row_index, row_count)?
+    };
     Ok(MoneyMsg::new(GetUploadRowsResponse { cells }))
 }
 

@@ -13,8 +13,10 @@ pub struct ListAccountsResponse {
 
 #[get("/")]
 pub async fn list_accounts(ds: &State<SharedDataStore>) -> MoneyResult<ListAccountsResponse> {
-    let guard = ds.lock().await;
-    let accounts = guard.list_accounts();
+    let accounts = {
+        let guard = ds.lock().await;
+        guard.list_accounts()
+    };
 
     Ok(MoneyMsg::new(ListAccountsResponse { accounts }))
 }
@@ -31,8 +33,10 @@ async fn add_account(
 ) -> MoneyResult<()> {
     let account_name = account.name.trim();
 
-    let mut guard = ds.lock().await;
-    guard.add_account(account_name).await?;
+    {
+        let mut guard = ds.lock().await;
+        guard.add_account(account_name).await?;
+    }
 
     Ok(MoneyMsg::new(()))
 }
