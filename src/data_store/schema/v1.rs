@@ -1,0 +1,107 @@
+use crate::error::{MoneyError, Result};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
+use tokio::fs::{self, File};
+use tokio::io::AsyncWriteExt;
+use uuid::Uuid;
+
+use super::deserialize_file;
+
+pub struct Data {
+    pub pending_uploads: HashMap<Uuid, PendingUpload>,
+    pub accounts: HashMap<String, Account>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Account {
+    pub account_name: String,
+}
+
+impl Account {
+    pub fn new(account_name: String) -> Account {
+        Account { account_name }
+    }
+}
+
+pub struct PendingUpload {
+    pub headers: Vec<String>,
+    pub cells: Vec<String>,
+    pub row_count: usize,
+}
+
+async fn load_accounts(accounts_dir: &Path) -> Result<HashMap<String, Account>> {
+    let mut accounts = HashMap::new();
+
+    let mut read_dir = fs::read_dir(accounts_dir).await?;
+    while let Some(item) = read_dir.next_entry().await? {
+        let path = item.path();
+        if !path.is_file() {
+            return Err(MoneyError::DataCorrupted(
+                "Unexpected item in accounts directory",
+            ));
+        }
+        match path.extension() {
+            Some(e) if e == "dat" => {}
+            _ => {
+                return Err(MoneyError::DataCorrupted(
+                    "Unexpected file extension in accounts directory",
+                ));
+            }
+        }
+        let account_name = match path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| STANDARD.decode(s).ok())
+            .and_then(|b| String::from_utf8(b).ok())
+        {
+            Some(n) => n,
+            None => {
+                return Err(MoneyError::DataCorrupted(
+                    "Unexpected file name in accounts directory",
+                ));
+            }
+        };
+
+        let account: Account = deserialize_file(path).await?;
+
+        if account.account_name != account_name {
+            return Err(MoneyError::DataCorrupted("Account name mismatch"));
+        }
+        match accounts.insert(account_name, account) {
+            Some(_) => return Err(MoneyError::DataCorrupted("Account with duplicate name")),
+            None => {}
+        }
+    }
+
+    Ok(accounts)
+}
+
+pub async fn load_data(data_dir: &Path) -> Result<Data> {
+    let accounts_dir = data_dir.join("accounts");
+    if !accounts_dir.exists() {
+        fs::create_dir(&accounts_dir).await?;
+    }
+
+    let accounts = load_accounts(&accounts_dir).await?;
+    let pending_uploads = HashMap::new();
+
+    Ok(Data {
+        pending_uploads,
+        accounts,
+    })
+}
+
+pub async fn init_data(data_dir: &Path) -> Result<()> {
+    if !data_dir.exists() {
+        fs::create_dir(&data_dir).await?;
+    }
+
+    let mut version_buf = File::create(data_dir.join("version.dat")).await?;
+    version_buf.write_u16_le(1).await?;
+
+    fs::create_dir(data_dir.join("accounts")).await?;
+
+    Ok(())
+}
