@@ -1,3 +1,4 @@
+node_modules/
 /target
 /static/web.js
 /static/web.js.map
