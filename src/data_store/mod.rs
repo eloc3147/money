@@ -1,7 +1,7 @@
 mod schema;
 
 use async_mutex::Mutex;
-use std::path::Path;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::error::{MoneyError, Result};
@@ -11,19 +11,20 @@ pub type SharedDataStore = Mutex<DataStore>;
 
 pub struct DataStore {
     inner: Data,
+    data_dir: PathBuf,
 }
 
 impl DataStore {
-    pub async fn load(data_dir: &Path) -> Result<SharedDataStore> {
-        let inner = load_data(data_dir).await?;
-        Ok(SharedDataStore::new(DataStore { inner }))
+    pub async fn load(data_dir: PathBuf) -> Result<SharedDataStore> {
+        let inner = load_data(&data_dir).await?;
+        Ok(SharedDataStore::new(DataStore { inner, data_dir }))
     }
 
     pub fn list_accounts(&self) -> Vec<String> {
         self.inner.accounts.keys().map(String::to_owned).collect()
     }
 
-    pub fn add_account(&mut self, account_name: &str) -> Result<()> {
+    pub async fn add_account(&mut self, account_name: &str) -> Result<()> {
         if self.inner.accounts.contains_key(account_name) {
             return Err(crate::error::MoneyError::AccountAlreadyExists);
         }
@@ -31,10 +32,13 @@ impl DataStore {
         if let Some(_) = self
             .inner
             .accounts
-            .insert(account_name.to_string(), account)
+            .insert(account_name.to_string(), account.clone())
         {
             panic!("The account list was modified while locked")
         }
+
+        account.save(&self.data_dir).await?;
+
         Ok(())
     }
 

@@ -1,11 +1,13 @@
 mod v1;
 
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, BufWriter, Read};
 use std::panic;
 use std::path::{Path, PathBuf};
 
+use bincode::{DefaultOptions, Options};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::error::{MoneyError, Result};
 
@@ -34,8 +36,23 @@ where
     spawn_task(move || -> Result<T> {
         let reader = BufReader::new(File::open(&path)?);
 
-        bincode::deserialize_from(reader)
+        DefaultOptions::new()
+            .deserialize_from(reader)
             .map_err(|_| MoneyError::DataCorrupted("Data file corrupted"))
+    })
+    .await?
+}
+
+async fn serialize_file<T>(path: PathBuf, data: T) -> Result<()>
+where
+    T: Serialize + Send + 'static,
+{
+    spawn_task(move || -> Result<()> {
+        let writer = BufWriter::new(File::create(path)?);
+
+        DefaultOptions::new()
+            .serialize_into(writer, &data)
+            .map_err(|e| MoneyError::from(e))
     })
     .await?
 }

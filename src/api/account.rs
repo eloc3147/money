@@ -32,7 +32,7 @@ async fn add_account(
     let account_name = account.name.trim();
 
     let mut guard = ds.lock().await;
-    guard.add_account(account_name)?;
+    guard.add_account(account_name).await?;
 
     Ok(MoneyMsg::new(()))
 }

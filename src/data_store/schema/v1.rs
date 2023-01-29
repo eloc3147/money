@@ -2,19 +2,19 @@ use crate::error::{MoneyError, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use super::deserialize_file;
+use super::{deserialize_file, serialize_file};
 
 pub struct Data {
     pub pending_uploads: HashMap<Uuid, PendingUpload>,
     pub accounts: HashMap<String, Account>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Account {
     pub account_name: String,
 }
@@ -22,6 +22,32 @@ pub struct Account {
 impl Account {
     pub fn new(account_name: String) -> Account {
         Account { account_name }
+    }
+
+    pub async fn load(path: PathBuf) -> Result<Account> {
+        let account_name = match path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| STANDARD.decode(s).ok())
+            .and_then(|b| String::from_utf8(b).ok())
+        {
+            Some(n) => n,
+            None => {
+                return Err(MoneyError::DataCorrupted("Invalid account filename"));
+            }
+        };
+
+        let account: Account = deserialize_file(path).await?;
+        if account.account_name != account_name {
+            return Err(MoneyError::DataCorrupted("Account name mismatch"));
+        }
+
+        Ok(account)
+    }
+
+    pub async fn save(self, data_dir: &Path) -> Result<()> {
+        let filename = format!("{}.dat", STANDARD.encode(self.account_name.as_bytes()));
+        serialize_file(data_dir.join("accounts").join(filename), self).await
     }
 }
 
@@ -50,26 +76,10 @@ async fn load_accounts(accounts_dir: &Path) -> Result<HashMap<String, Account>> 
                 ));
             }
         }
-        let account_name = match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| STANDARD.decode(s).ok())
-            .and_then(|b| String::from_utf8(b).ok())
-        {
-            Some(n) => n,
-            None => {
-                return Err(MoneyError::DataCorrupted(
-                    "Unexpected file name in accounts directory",
-                ));
-            }
-        };
 
-        let account: Account = deserialize_file(path).await?;
+        let account = Account::load(path).await?;
 
-        if account.account_name != account_name {
-            return Err(MoneyError::DataCorrupted("Account name mismatch"));
-        }
-        match accounts.insert(account_name, account) {
+        match accounts.insert(account.account_name.clone(), account) {
             Some(_) => return Err(MoneyError::DataCorrupted("Account with duplicate name")),
             None => {}
         }
@@ -80,10 +90,6 @@ async fn load_accounts(accounts_dir: &Path) -> Result<HashMap<String, Account>> 
 
 pub async fn load_data(data_dir: &Path) -> Result<Data> {
     let accounts_dir = data_dir.join("accounts");
-    if !accounts_dir.exists() {
-        fs::create_dir(&accounts_dir).await?;
-    }
-
     let accounts = load_accounts(&accounts_dir).await?;
     let pending_uploads = HashMap::new();
 

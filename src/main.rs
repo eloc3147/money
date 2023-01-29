@@ -21,7 +21,7 @@ async fn run() -> Result<()> {
         &data_dir.to_string_lossy()
     );
 
-    let data = data_store::DataStore::load(&data_dir).await?;
+    let data = data_store::DataStore::load(data_dir).await?;
 
     let mut config = Config::from(Config::figment());
     config.log_level = LogLevel::Debug;

@@ -21,6 +21,7 @@ struct MoneyErrorMsg {
 pub enum MoneyError {
     IoError(std::io::Error),
     CsvError(csv_async::Error),
+    SerializationError(bincode::ErrorKind),
     MissingEndpoint(String),
     InvalidUuid(uuid::Error),
     RowIndex(usize),
@@ -36,6 +37,7 @@ impl MoneyError {
         match self {
             MoneyError::IoError(_) => "I/O Error",
             MoneyError::CsvError(_) => "CSV Parsing Error",
+            MoneyError::SerializationError(_) => "Serialization Error",
             MoneyError::MissingEndpoint(_) => "Endpoint not found",
             MoneyError::InvalidUuid(_) => "Invalid UUID",
             MoneyError::RowIndex(_) => "Requested row does not exist",
@@ -50,6 +52,7 @@ impl MoneyError {
     pub fn context(&self) -> Option<String> {
         match self {
             MoneyError::CsvError(e) => Some(e.to_string()),
+            MoneyError::SerializationError(e) => Some(e.to_string()),
             MoneyError::MissingEndpoint(endpoint) => Some(endpoint.clone()),
             MoneyError::RowIndex(row) => Some(row.to_string()),
             MoneyError::DataCorrupted(s) => Some(s.to_string()),
@@ -63,6 +66,7 @@ impl fmt::Display for MoneyError {
         match &self {
             MoneyError::IoError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::CsvError(e) => write!(f, "{}: {}", self.msg(), e),
+            MoneyError::SerializationError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::MissingEndpoint(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::InvalidUuid(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::RowIndex(r) => write!(f, "{}: {}", self.msg(), r),
@@ -104,6 +108,15 @@ impl From<csv_async::Error> for MoneyError {
             }
         } else {
             MoneyError::CsvError(error)
+        }
+    }
+}
+
+impl From<bincode::Error> for MoneyError {
+    fn from(error: bincode::Error) -> MoneyError {
+        match *error {
+            bincode::ErrorKind::Io(e) => MoneyError::IoError(e),
+            e => MoneyError::SerializationError(e),
         }
     }
 }
