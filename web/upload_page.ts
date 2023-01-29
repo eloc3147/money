@@ -1,6 +1,7 @@
 import { el, RedomComponent } from "redom";
 import { Table, ColumnView, OptionConfig, Page, Tr, TdDropdown, Td } from "./components";
-import { add_upload, get_upload_rows, HEADER_OPTIONS, REQUIRED_HEADERS, submit_upload } from "./api";
+import { HEADER_OPTIONS, REQUIRED_HEADERS } from "./api/base";
+import { add_upload, get_upload_rows, submit_upload } from "./api/upload";
 
 
 export class UploadPage implements Page {

@@ -1,6 +1,6 @@
 import { el } from "redom";
-import { ColumnView, Page, Table, Tr } from "./components";
-import { get_accounts, add_account } from "./api";
+import { ColumnView, Page, Table } from "./components";
+import { get_accounts, add_account } from "./api/account";
 
 
 export class AccountsPage implements Page {
