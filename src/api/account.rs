@@ -7,12 +7,12 @@ use crate::backend::BackendHandle;
 use crate::components::{MoneyMsg, MoneyResult};
 
 #[derive(Debug, Serialize)]
-pub struct ListAccountsResponse {
+struct ListAccountsResponse {
     accounts: Vec<String>,
 }
 
 #[get("/")]
-pub async fn list_accounts(b: &State<BackendHandle>) -> MoneyResult<ListAccountsResponse> {
+async fn list_accounts(b: &State<BackendHandle>) -> MoneyResult<ListAccountsResponse> {
     let accounts = {
         let guard = b.lock().await;
         guard.list_accounts()

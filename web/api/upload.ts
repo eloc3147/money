@@ -27,12 +27,13 @@ export async function get_upload_rows(
 }
 
 
-export interface GetUploadRowsResponse {
-    rows: string[]
+export interface SubmitUploadResponse {
+    success: boolean,
+    msg: string,
 }
 
-export async function submit_upload(upload_id: string, header_selections: string[]): Promise<GetUploadRowsResponse> {
+export async function submit_upload(upload_id: string, header_selections: string[]): Promise<SubmitUploadResponse> {
     return await api_json_post(
         `upload/${upload_id}/submit`, { header_selections: header_selections }
-    ) as GetUploadRowsResponse;
+    ) as SubmitUploadResponse;
 }

@@ -73,16 +73,23 @@ export class UploadPage implements Page {
                 setChildren(this.upload_view, [
                     new UploadPreview(this, resp.upload_id, resp.headers, resp.header_suggestions, resp.row_count)
                 ]);
-            })
+            });
     }
 
-    draw_submitted() {
-        this.el.set_column_args("is-half");
-        this.set_error(null);
-        this.set_subtitle("");
-        setChildren(this.upload_view, [
-            new UploadSubmitted()
-        ]);
+    async submit(upload_id: string, header_selections: string[]) {
+        await submit_upload(upload_id, header_selections)
+            .then((resp) => {
+                if (resp.success) {
+                    this.el.set_column_args("is-half");
+                    this.set_error(null);
+                    this.set_subtitle("");
+                    setChildren(this.upload_view, [
+                        new UploadSubmitted()
+                    ]);
+                } else {
+                    this.set_error(resp.msg);
+                }
+            });
     }
 }
 
@@ -199,14 +206,10 @@ class UploadPreview implements RedomComponent {
 
         this.submit_button.onclick = async evt => {
             evt.preventDefault();
-            if (!this.check_error()) {
-                await submit_upload(this.upload_id, this.header_selections);
-                this.upload_page.draw_submitted();
-            }
+            await this.upload_page.submit(this.upload_id, this.header_selections);
         };
 
         this.add_rows();
-        this.check_error();
     }
 
     async add_rows(): Promise<void> {
@@ -232,26 +235,6 @@ class UploadPreview implements RedomComponent {
 
     process_update(column_index: number, selection: string): void {
         this.header_selections[column_index] = selection;
-        this.check_error();
-    }
-
-    check_error(): boolean {
-        let missing_required: string[] = [];
-        for (let i in REQUIRED_HEADERS) {
-            if (!this.header_selections.includes(REQUIRED_HEADERS[i])) {
-                missing_required.push(REQUIRED_HEADERS[i]);
-            }
-        }
-
-        if (missing_required.length == 0) {
-            this.upload_page.set_error(null);
-            this.submit_wrapper.removeAttribute("disabled");
-            return false;
-        } else {
-            this.upload_page.set_error(`Missing required headers: ${missing_required.join(", ")}`);
-            this.submit_wrapper.setAttribute("disabled", "true");
-            return true;
-        }
     }
 }
 

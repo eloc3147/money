@@ -9,6 +9,7 @@ anyhow = "1.0"
 async-mutex = "1.4.0"
 
 serde = { version = "1.0", features = ["derive"] }
+serde_variant = "0.1.1"
 uuid = { version = "1.2.2", features = ["serde", "v4"] }
 yansi = "0.5.1"
 base64 = "0.21.0"

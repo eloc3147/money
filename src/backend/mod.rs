@@ -6,9 +6,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::error::{MoneyError, Result};
+use crate::{
+    components::HeaderOption,
+    error::{MoneyError, Result},
+};
 use schema::{load_data, Account, Data};
 use upload::PendingUpload;
+
+pub use self::upload::SubmitResult;
 
 pub type BackendHandle = Mutex<Backend>;
 
@@ -88,5 +93,18 @@ impl Backend {
 
         let cells = upload.get_rows(row_index, row_count)?.to_vec();
         Ok(cells)
+    }
+
+    pub fn try_submit_upload(
+        &self,
+        upload_id: Uuid,
+        header_selections: &[HeaderOption],
+    ) -> Result<SubmitResult> {
+        let upload = match self.pending_uploads.get(&upload_id) {
+            Some(u) => u,
+            None => return Err(MoneyError::NotFound),
+        };
+
+        upload.try_submit(&header_selections)
     }
 }

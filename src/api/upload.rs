@@ -8,11 +8,11 @@ use rocket::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::backend::BackendHandle;
+use crate::backend::{BackendHandle, SubmitResult};
 use crate::components::{HeaderOption, MoneyMsg, MoneyResult};
 use crate::error::Result;
 
-pub struct CsvFile {
+struct CsvFile {
     headers: Vec<String>,
     cells: Vec<String>,
     row_count: usize,
@@ -41,7 +41,7 @@ async fn parse_csv(stream: DataStream<'_>) -> Result<CsvFile> {
 }
 
 #[derive(Clone, PartialEq, Serialize)]
-pub struct AddUploadResponse {
+struct AddUploadResponse {
     upload_id: Uuid,
     headers: Vec<String>,
     header_suggestions: Vec<HeaderOption>,
@@ -73,37 +73,52 @@ async fn add_upload(b: &State<BackendHandle>, file: Data<'_>) -> MoneyResult<Add
 }
 
 #[derive(Clone, PartialEq, Serialize)]
-pub struct GetUploadRowsResponse {
+struct GetUploadRowsResponse {
     cells: Vec<String>,
 }
 
 #[get("/<upload_id>/rows?<row_index>&<row_count>")]
-pub async fn list_upload_rows(
-    ds: &State<BackendHandle>,
+async fn list_upload_rows(
+    b: &State<BackendHandle>,
     upload_id: &str,
     row_index: usize,
     row_count: usize,
 ) -> MoneyResult<GetUploadRowsResponse> {
     let uuid = Uuid::parse_str(upload_id)?;
     let cells = {
-        let guard = ds.lock().await;
+        let guard = b.lock().await;
         guard.get_pending_upload_rows(uuid, row_index, row_count)?
     };
     Ok(MoneyMsg::new(GetUploadRowsResponse { cells }))
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SubmitUploadRequest {
+struct SubmitUploadRequest {
     header_selections: Vec<HeaderOption>,
 }
 
+#[derive(Clone, PartialEq, Serialize)]
+struct SubmitUploadResponse {
+    success: bool,
+    msg: String,
+}
+
 #[post("/<upload_id>/submit", data = "<data>")]
-pub async fn submit_upload(upload_id: &str, data: Json<SubmitUploadRequest>) -> MoneyResult<()> {
+async fn submit_upload(
+    b: &State<BackendHandle>,
+    upload_id: &str,
+    data: Json<SubmitUploadRequest>,
+) -> MoneyResult<SubmitUploadResponse> {
     let uuid = Uuid::parse_str(upload_id)?;
 
-    println!("Upload submitted with selections: {:?}", data);
+    let submit_response = {
+        let guard = b.lock().await;
+        guard.try_submit_upload(uuid, &data.header_selections)?
+    };
 
-    Ok(MoneyMsg::new(()))
+    let success = submit_response == SubmitResult::Success;
+    let msg = submit_response.to_string();
+    Ok(MoneyMsg::new(SubmitUploadResponse { success, msg }))
 }
 
 pub fn routes() -> Vec<Route> {
