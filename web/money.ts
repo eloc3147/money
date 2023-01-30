@@ -34,7 +34,7 @@ class NavbarItem {
 class MoneyApp {
     page_map: { [title: string]: Page };
     navbar_items: NavbarItem[];
-    current: Page;
+    current: Page | null;
     el: HTMLDivElement;
     content: HTMLDivElement;
 

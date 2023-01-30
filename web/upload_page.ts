@@ -1,4 +1,4 @@
-import { el, RedomComponent } from "redom";
+import { el, mount, RedomComponent, setChildren } from "redom";
 import { Table, ColumnView, OptionConfig, Page, Tr, TdDropdown, Td } from "./components";
 import { HEADER_OPTIONS, REQUIRED_HEADERS } from "./api/base";
 import { add_upload, get_upload_rows, submit_upload } from "./api/upload";
@@ -7,9 +7,9 @@ import { add_upload, get_upload_rows, submit_upload } from "./api/upload";
 export class UploadPage implements Page {
     title: HTMLParagraphElement;
     subtitle: HTMLParagraphElement;
-    upload_select: UploadSelect;
     error_label: HTMLDivElement;
     error_box: HTMLElement;
+    upload_view: HTMLElement;
 
     input_field: HTMLDivElement;
     load_field: HTMLDivElement;
@@ -22,39 +22,30 @@ export class UploadPage implements Page {
     el: ColumnView;
 
     constructor() {
-        this.title = null;
-        this.subtitle = null;
-        this.upload_select = null;
-
-        this.input_field = null;
-        this.load_field = null;
-
-        this.el = new ColumnView("is-half");
-    }
-
-    onmount() {
-        this.title = el("p", { class: "title is-1" }, "Add Transactions");
         this.subtitle = el("p", { class: "subtitle is-3" }, "Select a file");
         this.error_label = el("div", { className: "message-body is-hidden" }, "");
         this.error_box = el("article", { className: "message is-danger" }, this.error_label);
-        this.upload_select = new UploadSelect(this);
+        this.upload_view = el("div");
 
-        this.el.set_contents([
-            this.title,
+        this.el = new ColumnView("is-half", [
+            el("p", { class: "title is-1" }, "Add Transactions"),
+            el("hr"),
             this.subtitle,
             this.error_box,
-            this.upload_select
+            this.upload_view
         ]);
+    }
+
+    onmount() {
+        mount(this.upload_view, new UploadSelect(this));
     }
 
     onremount() {
         this.el.set_column_args("is-half");
-
-        this.el.set_contents([
-            this.title,
-            this.subtitle,
-            this.error_box,
-            this.upload_select
+        this.set_error(null);
+        this.set_subtitle("Select a file");
+        setChildren(this.upload_view, [
+            new UploadSelect(this)
         ]);
     }
 
@@ -68,27 +59,28 @@ export class UploadPage implements Page {
         }
     }
 
+    set_subtitle(subtitle: string) {
+        this.subtitle.innerText = subtitle;
+    }
+
     async load_file(file: File) {
         await add_upload(file)
             .then((resp) => {
                 this.set_error(null);
-                this.subtitle.innerText = "Select the types of each column";
+                this.set_subtitle("Select the types of each column");
 
                 this.el.set_column_args("is-full");
-                this.el.set_contents([
-                    this.title,
-                    this.subtitle,
-                    this.error_box,
+                setChildren(this.upload_view, [
                     new UploadPreview(this, resp.upload_id, resp.headers, resp.header_suggestions, resp.row_count)
-                ])
+                ]);
             })
     }
 
     draw_submitted() {
+        this.el.set_column_args("is-half");
         this.set_error(null);
-        this.el.set_contents([
-            this.title,
-            this.error_box,
+        this.set_subtitle("");
+        setChildren(this.upload_view, [
             new UploadSubmitted()
         ]);
     }
@@ -105,26 +97,25 @@ class UploadSelect implements RedomComponent {
     constructor(upload_page: UploadPage) {
         this.upload_page = upload_page;
 
+        this.file_field = el("input", { type: "file", class: "input" });
+        this.load_button = el("button", { class: "button is-link" }, "Load file");
         this.el = el("div", [
             el("div.field", [
                 el("label.label", "File upload"),
-                el("div.control", this.file_field = el("input", { type: "file", class: "input" }))
+                el("div.control", this.file_field)
             ]),
-            el(
-                "div.field",
-                el("div.control", this.load_button = el("button", { class: "button is-link" }, "Load file"))
-            )
+            el("div.field", el("div.control", this.load_button))
         ]);
 
         this.load_button.onclick = async (evt) => {
             evt.preventDefault();
 
-            if (this.file_field.files.length != 1) {
-                this.upload_page.set_error("Please select one file to upload.")
-            } else {
-                this.upload_page.set_error(null);
+            if (this.file_field.files == null || this.file_field.files.length != 1) {
+                this.upload_page.set_error("Please select one file to upload.");
+                return
             }
 
+            this.upload_page.set_error(null);
             await this.upload_page.load_file(this.file_field.files[0]);
         };
     }
@@ -224,7 +215,7 @@ class UploadPreview implements RedomComponent {
 
         if (row_count > 0) {
             let resp = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
-            let rows = [];
+            let rows: Tr[] = [];
             for (let i = 0; i < resp.cells.length; i += this.column_count) {
                 let row = new Tr(Td);
                 row.update(resp.cells.slice(i, i + this.column_count));
@@ -245,7 +236,7 @@ class UploadPreview implements RedomComponent {
     }
 
     check_error(): boolean {
-        let missing_required = [];
+        let missing_required: string[] = [];
         for (let i in REQUIRED_HEADERS) {
             if (!this.header_selections.includes(REQUIRED_HEADERS[i])) {
                 missing_required.push(REQUIRED_HEADERS[i]);
