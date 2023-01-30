@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::error::{MoneyError, Result};
 
-pub use v1::{Account, Data, PendingUpload};
+pub use v1::{Account, Data};
 
 async fn spawn_task<F, R>(f: F) -> Result<R>
 where

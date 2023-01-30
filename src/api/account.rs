@@ -3,8 +3,8 @@ use rocket::{
     Route, State,
 };
 
+use crate::backend::BackendHandle;
 use crate::components::{MoneyMsg, MoneyResult};
-use crate::data_store::SharedDataStore;
 
 #[derive(Debug, Serialize)]
 pub struct ListAccountsResponse {
@@ -12,9 +12,9 @@ pub struct ListAccountsResponse {
 }
 
 #[get("/")]
-pub async fn list_accounts(ds: &State<SharedDataStore>) -> MoneyResult<ListAccountsResponse> {
+pub async fn list_accounts(b: &State<BackendHandle>) -> MoneyResult<ListAccountsResponse> {
     let accounts = {
-        let guard = ds.lock().await;
+        let guard = b.lock().await;
         guard.list_accounts()
     };
 
@@ -28,13 +28,13 @@ struct AddAccountRequest {
 
 #[post("/", data = "<account>")]
 async fn add_account(
-    ds: &State<SharedDataStore>,
+    b: &State<BackendHandle>,
     account: Json<AddAccountRequest>,
 ) -> MoneyResult<()> {
     let account_name = account.name.trim();
 
     {
-        let mut guard = ds.lock().await;
+        let mut guard = b.lock().await;
         guard.add_account(account_name).await?;
     }
 

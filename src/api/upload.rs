@@ -8,8 +8,8 @@ use rocket::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::backend::BackendHandle;
 use crate::components::{HeaderOption, MoneyMsg, MoneyResult};
-use crate::data_store::SharedDataStore;
 use crate::error::Result;
 
 pub struct CsvFile {
@@ -49,12 +49,12 @@ pub struct AddUploadResponse {
 }
 
 #[post("/", data = "<file>")]
-async fn add_upload(ds: &State<SharedDataStore>, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
+async fn add_upload(b: &State<BackendHandle>, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
     let file_stream = file.open(100u8.mebibytes());
     let parsed = parse_csv(file_stream).await?;
 
     let upload_id = {
-        let mut guard = ds.lock().await;
+        let mut guard = b.lock().await;
         guard.add_pending_upload(parsed.headers.clone(), parsed.cells, parsed.row_count)
     };
 
@@ -79,7 +79,7 @@ pub struct GetUploadRowsResponse {
 
 #[get("/<upload_id>/rows?<row_index>&<row_count>")]
 pub async fn list_upload_rows(
-    ds: &State<SharedDataStore>,
+    ds: &State<BackendHandle>,
     upload_id: &str,
     row_index: usize,
     row_count: usize,

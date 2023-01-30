@@ -5,12 +5,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
-use uuid::Uuid;
 
 use super::{deserialize_file, serialize_file};
 
 pub struct Data {
-    pub pending_uploads: HashMap<Uuid, PendingUpload>,
     pub accounts: HashMap<String, Account>,
 }
 
@@ -51,12 +49,6 @@ impl Account {
     }
 }
 
-pub struct PendingUpload {
-    pub headers: Vec<String>,
-    pub cells: Vec<String>,
-    pub row_count: usize,
-}
-
 async fn load_accounts(accounts_dir: &Path) -> Result<HashMap<String, Account>> {
     let mut accounts = HashMap::new();
 
@@ -91,12 +83,8 @@ async fn load_accounts(accounts_dir: &Path) -> Result<HashMap<String, Account>> 
 pub async fn load_data(data_dir: &Path) -> Result<Data> {
     let accounts_dir = data_dir.join("accounts");
     let accounts = load_accounts(&accounts_dir).await?;
-    let pending_uploads = HashMap::new();
 
-    Ok(Data {
-        pending_uploads,
-        accounts,
-    })
+    Ok(Data { accounts })
 }
 
 pub async fn init_data(data_dir: &Path) -> Result<()> {
