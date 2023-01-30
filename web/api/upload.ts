@@ -28,8 +28,11 @@ export async function get_upload_rows(
 
 
 export interface SubmitUploadResponse {
-    success: boolean,
-    msg: string,
+    status: string,
+    header_error: string | null,
+    row: number | null,
+    col: number | null,
+    cell_error: string | null,
 }
 
 export async function submit_upload(upload_id: string, header_selections: string[]): Promise<SubmitUploadResponse> {

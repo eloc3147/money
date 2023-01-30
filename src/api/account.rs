@@ -3,8 +3,8 @@ use rocket::{
     Route, State,
 };
 
+use crate::api::{MoneyMsg, MoneyResult};
 use crate::backend::BackendHandle;
-use crate::components::{MoneyMsg, MoneyResult};
 
 #[derive(Debug, Serialize)]
 struct ListAccountsResponse {

@@ -8,8 +8,8 @@ use rocket::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::backend::{BackendHandle, SubmitResult};
-use crate::components::{HeaderOption, MoneyMsg, MoneyResult};
+use crate::api::{MoneyMsg, MoneyResult};
+use crate::backend::{BackendHandle, HeaderOption, SubmitResult};
 use crate::error::Result;
 
 struct CsvFile {
@@ -99,8 +99,11 @@ struct SubmitUploadRequest {
 
 #[derive(Clone, PartialEq, Serialize)]
 struct SubmitUploadResponse {
-    success: bool,
-    msg: String,
+    status: &'static str,
+    header_error: Option<String>,
+    row: Option<usize>,
+    col: Option<usize>,
+    cell_error: Option<String>,
 }
 
 #[post("/<upload_id>/submit", data = "<data>")]
@@ -111,14 +114,36 @@ async fn submit_upload(
 ) -> MoneyResult<SubmitUploadResponse> {
     let uuid = Uuid::parse_str(upload_id)?;
 
-    let submit_response = {
+    let submit_result = {
         let guard = b.lock().await;
         guard.try_submit_upload(uuid, &data.header_selections)?
     };
 
-    let success = submit_response == SubmitResult::Success;
-    let msg = submit_response.to_string();
-    Ok(MoneyMsg::new(SubmitUploadResponse { success, msg }))
+    let resp = match submit_result {
+        SubmitResult::Success => SubmitUploadResponse {
+            status: "success",
+            header_error: None,
+            row: None,
+            col: None,
+            cell_error: None,
+        },
+        SubmitResult::HeaderError(e) => SubmitUploadResponse {
+            status: "header_error",
+            header_error: Some(e),
+            row: None,
+            col: None,
+            cell_error: None,
+        },
+        SubmitResult::CellError { row, col, msg } => SubmitUploadResponse {
+            status: "cell_error",
+            header_error: None,
+            row: Some(row),
+            col: Some(col),
+            cell_error: Some(msg),
+        },
+    };
+
+    Ok(MoneyMsg::new(resp))
 }
 
 pub fn routes() -> Vec<Route> {

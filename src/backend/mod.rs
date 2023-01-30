@@ -6,14 +6,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::{
-    components::HeaderOption,
-    error::{MoneyError, Result},
-};
+use crate::error::{MoneyError, Result};
 use schema::{load_data, Account, Data};
 use upload::PendingUpload;
 
-pub use self::upload::SubmitResult;
+pub use self::upload::{HeaderOption, SubmitResult};
 
 pub type BackendHandle = Mutex<Backend>;
 

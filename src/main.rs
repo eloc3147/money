@@ -3,7 +3,6 @@ extern crate rocket;
 
 mod api;
 mod backend;
-mod components;
 mod error;
 
 use error::Result;

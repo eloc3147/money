@@ -1,11 +1,39 @@
 mod account;
 mod upload;
 
-use rocket::fairing::AdHoc;
-use rocket::Request;
+use rocket::{
+    fairing::AdHoc,
+    response::{self, Responder},
+    serde::json::Json,
+    Request,
+};
+use serde::Serialize;
 
-use crate::components::MoneyResult;
 use crate::error::MoneyError;
+
+#[derive(Debug, Serialize)]
+pub struct MoneyMsg<T> {
+    status: &'static str,
+    response: T,
+}
+
+impl<T> MoneyMsg<T> {
+    pub fn new(inner: T) -> MoneyMsg<T> {
+        MoneyMsg {
+            status: "ok",
+            response: inner,
+        }
+    }
+}
+
+impl<'r, T: Serialize> Responder<'r, 'static> for MoneyMsg<T> {
+    #[inline]
+    fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
+        Json(self).respond_to(req)
+    }
+}
+
+pub type MoneyResult<T> = std::result::Result<MoneyMsg<T>, MoneyError>;
 
 #[catch(404)]
 fn not_found(req: &Request) -> MoneyResult<()> {

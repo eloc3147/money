@@ -79,7 +79,7 @@ export class UploadPage implements Page {
     async submit(upload_id: string, header_selections: string[]) {
         await submit_upload(upload_id, header_selections)
             .then((resp) => {
-                if (resp.success) {
+                if (resp.status == "success") {
                     this.el.set_column_args("is-half");
                     this.set_error(null);
                     this.set_subtitle("");
@@ -87,7 +87,15 @@ export class UploadPage implements Page {
                         new UploadSubmitted()
                     ]);
                 } else {
-                    this.set_error(resp.msg);
+                    let error;
+
+                    if (resp.status == "header_error") {
+                        error = `Header error: ${resp.header_error}`;
+                    } else if (resp.status == "cell_error") {
+                        error = `Cell error on row ${resp.row} col ${resp.col}: ${resp.cell_error}`;
+                    }
+
+                    this.set_error(error);
                 }
             });
     }
