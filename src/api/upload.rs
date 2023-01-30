@@ -50,7 +50,7 @@ pub struct AddUploadResponse {
 
 #[post("/", data = "<file>")]
 async fn add_upload(ds: &State<SharedDataStore>, file: Data<'_>) -> MoneyResult<AddUploadResponse> {
-    let file_stream = file.open(10u8.mebibytes());
+    let file_stream = file.open(100u8.mebibytes());
     let parsed = parse_csv(file_stream).await?;
 
     let upload_id = {
@@ -61,7 +61,7 @@ async fn add_upload(ds: &State<SharedDataStore>, file: Data<'_>) -> MoneyResult<
     let header_suggestions = parsed
         .headers
         .iter()
-        .map(|h| HeaderOption::from_str(h))
+        .map(|h| HeaderOption::get_header_suggestion(h))
         .collect();
 
     Ok(MoneyMsg::new(AddUploadResponse {

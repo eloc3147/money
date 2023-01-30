@@ -158,7 +158,7 @@ class UploadPreview implements RedomComponent {
         this.current_row_count = 0;
         this.header_selections = this.header_suggestions;
 
-        let expanded_suggestions = header_suggestions.map((suggestion) => {
+        let option_configs = header_suggestions.map((suggestion) => {
             return HEADER_OPTIONS.map(option => {
                 return {
                     value: option,
@@ -171,7 +171,7 @@ class UploadPreview implements RedomComponent {
 
         let suggestion_row = new Tr(TdDropdown);
         suggestion_row.update(
-            expanded_suggestions,
+            option_configs,
             { callback: (column_index, selection) => this.process_update(column_index, selection) }
         );
         this.table.add_rows([suggestion_row]);
