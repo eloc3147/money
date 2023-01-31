@@ -42,17 +42,30 @@ export class Td implements RedomComponent {
 }
 
 
-export class Tr implements RedomComponent {
-    el: HTMLTableRowElement;
-    list: List;
+interface ReadableList<T> extends List {
+    // Undocumented REDOM parameter
+    views: T[];
+}
 
-    constructor(type: RedomComponentClass) {
+
+export class Tr<T extends RedomComponent> implements RedomComponent {
+    el: HTMLTableRowElement;
+    list: ReadableList<T>;
+    cells: T[];
+
+    constructor(type: { new(): T }) {
         this.el = el("tr");
-        this.list = list(this.el, type);
+        this.list = list(this.el, type) as ReadableList<T>;
+        this.cells = [];
     }
 
     update(data: any[], contents?: any): void {
-        this.list.update(data, contents);
+        this.cells = data;
+        this.list.update(this.cells, contents);
+    }
+
+    get_cell(index: number): T {
+        return this.list.views[index];
     }
 }
 
@@ -112,38 +125,43 @@ export class TdDropdown implements RedomComponent {
     }
 }
 
+type TableCellOptions = Td | TdDropdown;
+
 
 export class Table implements RedomComponent {
     el: HTMLTableElement;
-    header_row: Tr | null;
+    body: HTMLTableSectionElement;
+    rows: Tr<Th | TableCellOptions>[];
 
     constructor(headers: string[] | null) {
-        let rows: HTMLTableSectionElement[] = [];
+        this.rows = [];
+
+        let sections: HTMLTableSectionElement[] = [];
 
         if (headers != null) {
-            this.header_row = new Tr(Th);
-            this.header_row.update(headers);
-            rows.push(el("thead", this.header_row));
-        } else {
-            this.header_row = null;
+            let header_row = new Tr(Th);
+            header_row.update(headers);
+
+            sections.push(el("thead", header_row));
         }
 
-        this.el = el("table", rows, { class: "table" });
+        this.body = el("tbody");
+        sections.push(this.body);
+
+        this.el = el("table", sections, { class: "table" });
     }
 
     clear_rows(): void {
-        if (this.header_row != null) {
-            setChildren(this.el, [this.header_row]);
-        } else {
-            setChildren(this.el, []);
-        }
+        this.rows = [];
+        setChildren(this.body, this.rows);
     }
 
-    add_row(row: Tr): void {
-        mount(this.el, row);
+    add_row(row: Tr<TableCellOptions>): void {
+        this.rows.push(row);
+        mount(this.body, row);
     }
 
-    add_rows(rows: Tr[]): void {
+    add_rows(rows: Tr<TableCellOptions>[]): void {
         for (let row in rows) {
             this.add_row(rows[row]);
         }
@@ -155,6 +173,10 @@ export class Table implements RedomComponent {
             row_el.update(rows[row]);
             this.add_row(row_el);
         }
+    }
+
+    get_row(index: number): Tr<TableCellOptions> {
+        return this.rows[index];
     }
 }
 

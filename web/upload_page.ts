@@ -37,10 +37,6 @@ export class UploadPage implements Page {
     }
 
     onmount() {
-        mount(this.upload_view, new UploadSelect(this));
-    }
-
-    onremount() {
         this.el.set_column_args("is-half");
         this.set_error(null);
         this.set_subtitle("Select a file");
@@ -76,8 +72,8 @@ export class UploadPage implements Page {
             });
     }
 
-    async submit(upload_id: string, header_selections: string[]) {
-        await submit_upload(upload_id, header_selections)
+    async submit(upload_preview: UploadPreview) {
+        await submit_upload(upload_preview.upload_id, upload_preview.header_selections)
             .then((resp) => {
                 if (resp.status == "success") {
                     this.el.set_column_args("is-half");
@@ -89,10 +85,12 @@ export class UploadPage implements Page {
                 } else {
                     let error;
 
+                    upload_preview.clear_cell_error();
                     if (resp.status == "header_error") {
                         error = `Header error: ${resp.header_error}`;
                     } else if (resp.status == "cell_error") {
-                        error = `Cell error on row ${resp.row} col ${resp.col}: ${resp.cell_error}`;
+                        upload_preview.set_cell_error(resp.row as number, resp.col as number);
+                        error = resp.cell_error;
                     }
 
                     this.set_error(error);
@@ -156,6 +154,9 @@ class UploadPreview implements RedomComponent {
     submit_button: HTMLButtonElement;
     submit_wrapper: HTMLFieldSetElement;
 
+    error_row: Tr<Td> | null;
+    error_cell: Td | null;
+
     constructor(
         upload_page: UploadPage,
         upload_id: string,
@@ -172,6 +173,8 @@ class UploadPreview implements RedomComponent {
 
         this.current_row_count = 0;
         this.header_selections = this.header_suggestions;
+        this.error_row = null;
+        this.error_cell = null;
 
         let option_configs = header_suggestions.map((suggestion) => {
             return HEADER_OPTIONS.map(option => {
@@ -214,7 +217,7 @@ class UploadPreview implements RedomComponent {
 
         this.submit_button.onclick = async evt => {
             evt.preventDefault();
-            await this.upload_page.submit(this.upload_id, this.header_selections);
+            await this.upload_page.submit(this);
         };
 
         this.add_rows();
@@ -226,7 +229,7 @@ class UploadPreview implements RedomComponent {
 
         if (row_count > 0) {
             let resp = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
-            let rows: Tr[] = [];
+            let rows: Tr<Td>[] = [];
             for (let i = 0; i < resp.cells.length; i += this.column_count) {
                 let row = new Tr(Td);
                 row.update(resp.cells.slice(i, i + this.column_count));
@@ -243,6 +246,29 @@ class UploadPreview implements RedomComponent {
 
     process_update(column_index: number, selection: string): void {
         this.header_selections[column_index] = selection;
+    }
+
+    set_cell_error(row_index: number, cell_index: number): void {
+        // TODO: Check if row is loaded, and load it plus a buffer if required
+        let row = this.table.get_row(row_index + 1) as Tr<Td>;
+        this.error_row = row;
+        row.el.classList.add("has-background-danger-light");
+
+        let cell = row.get_cell(cell_index);
+        this.error_cell = cell;
+        cell.el.classList.add("has-background-danger");
+    }
+
+    clear_cell_error(): void {
+        if (this.error_row != null) {
+            this.error_row.el.classList.remove("has-background-danger-light");
+            this.error_row = null;
+        }
+
+        if (this.error_cell != null) {
+            this.error_cell.el.classList.remove("has-background-danger");
+            this.error_cell = null;
+        }
     }
 }
 
