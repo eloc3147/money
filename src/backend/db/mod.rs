@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use log::{error, info};
 use rocket::fairing::AdHoc;
-use rocket::{fairing, Build, Rocket};
 use rocket_db_pools::sqlx::{self, Row, SqlitePool};
 use rocket_db_pools::Database;
 use tokio;
@@ -16,21 +15,19 @@ use migrations::MIGRATIONS;
 #[database("money_db")]
 pub struct Db(SqlitePool);
 
-pub fn build_fairing(data_dir: PathBuf) -> AdHoc {
-    AdHoc::try_on_ignite("Database Setup", move |rocket| setup_db(rocket, data_dir))
-}
+pub fn setup_db(data_dir: PathBuf) -> AdHoc {
+    AdHoc::try_on_ignite("Database Setup", move |rocket| async {
+        let Some(db) = Db::fetch(&rocket) else {
+            return Err(rocket);
+        };
 
-async fn setup_db(rocket: Rocket<Build>, data_dir: PathBuf) -> fairing::Result {
-    let Some(db) = Db::fetch(&rocket) else {
-        return Err(rocket);
-    };
+        if let Err(e) = setup_db_inner(db, data_dir).await {
+            error!("{:?}", e);
+            return Err(rocket);
+        };
 
-    if let Err(e) = setup_db_inner(db, data_dir).await {
-        error!("{:?}", e);
-        return Err(rocket);
-    };
-
-    Ok(rocket)
+        Ok(rocket)
+    })
 }
 
 async fn setup_db_inner(db: &Db, data_dir: PathBuf) -> Result<()> {

@@ -1,10 +1,14 @@
 use rocket::{
+    futures::TryStreamExt,
     serde::{json::Json, Deserialize, Serialize},
-    Route, State,
+    Route,
 };
+use rocket_db_pools::sqlx::{self, Row};
 
-use crate::api::{MoneyMsg, MoneyResult};
-use crate::backend::BackendHandle;
+use crate::{
+    api::{ApiResponse, ApiResult},
+    backend::db::Db,
+};
 
 #[derive(Debug, Serialize)]
 struct ListAccountsResponse {
@@ -12,13 +16,15 @@ struct ListAccountsResponse {
 }
 
 #[get("/")]
-async fn list_accounts(b: &State<BackendHandle>) -> MoneyResult<ListAccountsResponse> {
-    let accounts = {
-        let guard = b.lock().await;
-        guard.list_accounts()
-    };
+async fn list_accounts(db: &Db) -> ApiResult<ListAccountsResponse> {
+    let mut rows = sqlx::query("SELECT name FROM accounts;").fetch(&**db);
 
-    Ok(MoneyMsg::new(ListAccountsResponse { accounts }))
+    let mut accounts = Vec::new();
+    while let Some(row) = rows.try_next().await? {
+        accounts.push(row.try_get::<String, usize>(0)?);
+    }
+
+    Ok(ApiResponse::new(ListAccountsResponse { accounts }))
 }
 
 #[derive(Deserialize)]
@@ -27,18 +33,15 @@ struct AddAccountRequest {
 }
 
 #[post("/", data = "<account>")]
-async fn add_account(
-    b: &State<BackendHandle>,
-    account: Json<AddAccountRequest>,
-) -> MoneyResult<()> {
+async fn add_account(db: &Db, account: Json<AddAccountRequest>) -> ApiResult<()> {
     let account_name = account.name.trim();
 
-    {
-        let mut guard = b.lock().await;
-        guard.add_account(account_name).await?;
-    }
+    sqlx::query("INSERT INTO accounts (name) VALUES (?);")
+        .bind(account_name)
+        .execute(&**db)
+        .await?;
 
-    Ok(MoneyMsg::new(()))
+    Ok(ApiResponse::new(()))
 }
 
 pub fn routes() -> Vec<Route> {
