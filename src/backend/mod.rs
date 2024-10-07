@@ -1,3 +1,4 @@
+pub mod db;
 mod schema;
 mod upload;
 

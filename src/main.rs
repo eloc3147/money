@@ -7,6 +7,7 @@ mod error;
 
 use error::Result;
 use rocket::{fs::FileServer, log::LogLevel, Config};
+use rocket_db_pools::Database;
 use yansi::Paint;
 
 async fn run() -> Result<()> {
@@ -27,6 +28,8 @@ async fn run() -> Result<()> {
 
     println!("{}", Paint::blue("Launching web server."));
     let _ = rocket::custom(config)
+        .attach(backend::db::Db::init())
+        .attach(backend::db::build_fairing(data_dir))
         .attach(api::stage())
         .manage(data)
         .mount("/", FileServer::from("static"))
