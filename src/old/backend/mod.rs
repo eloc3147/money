@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::error::{MoneyError, Result};
-use schema::{load_data, Account, Data};
+use crate::old::error::{MoneyError, Result};
+use schema::{Account, Data, load_data};
 use upload::PendingUpload;
 
 pub use self::upload::{HeaderOption, SubmitResult};
@@ -37,7 +37,7 @@ impl Backend {
 
     pub async fn add_account(&mut self, account_name: &str) -> Result<()> {
         if self.data.accounts.contains_key(account_name) {
-            return Err(crate::error::MoneyError::AccountAlreadyExists);
+            return Err(crate::old::error::MoneyError::AccountAlreadyExists);
         }
         let account = Account::new(account_name.to_string());
         if let Some(_) = self

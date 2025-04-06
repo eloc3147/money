@@ -6,10 +6,10 @@ use std::panic;
 use std::path::{Path, PathBuf};
 
 use bincode::{DefaultOptions, Options};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
-use crate::error::{MoneyError, Result};
+use crate::old::error::{MoneyError, Result};
 
 pub use v1::{Account, Data};
 

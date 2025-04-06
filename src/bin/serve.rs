@@ -1,12 +1,5 @@
-#[macro_use]
-extern crate rocket;
-
-mod api;
-mod backend;
-mod error;
-
-use error::Result;
-use rocket::{fs::FileServer, log::LogLevel, Config};
+use money::old::error::Result;
+use rocket::{Config, fs::FileServer, log::LogLevel};
 use yansi::Paint;
 
 async fn run() -> Result<()> {
@@ -20,14 +13,14 @@ async fn run() -> Result<()> {
         &data_dir.to_string_lossy()
     );
 
-    let data = backend::Backend::load(data_dir).await?;
+    let data = money::old::backend::Backend::load(data_dir).await?;
 
     let mut config = Config::from(Config::figment());
     config.log_level = LogLevel::Debug;
 
     println!("{}", Paint::blue("Launching web server."));
     let _ = rocket::custom(config)
-        .attach(api::stage())
+        .attach(money::old::api::stage())
         .manage(data)
         .mount("/", FileServer::from("static"))
         .launch()

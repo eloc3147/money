@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_variant::to_variant_name;
 
-use crate::error::{MoneyError, Result};
+use crate::old::error::{MoneyError, Result};
 
 #[derive(Clone, PartialEq, Copy, Debug, Serialize, Deserialize)]
 pub enum HeaderOption {
@@ -80,7 +80,7 @@ impl PendingUpload {
                         row: row_index,
                         col: header_selections.amount_col,
                         msg: format!("Cell \"{}\" could not be parsed as an amount", amount_str),
-                    })
+                    });
                 }
             };
 

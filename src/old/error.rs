@@ -6,10 +6,9 @@ use rocket::{
     http::Status,
     request::Request,
     response::{self, Responder},
-    serde::{json::Json, Serialize},
+    serde::{Serialize, json::Json},
 };
 use uuid;
-use yansi::Paint;
 
 #[derive(Serialize, Debug)]
 struct MoneyErrorMsg {
@@ -81,7 +80,7 @@ impl fmt::Display for MoneyError {
 
 impl<'r> Responder<'r, 'static> for MoneyError {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
-        warn_!("{}", Paint::default(&self));
+        // warn_!("{}", Paint::default(&self));
 
         let mut resp = Json(MoneyErrorMsg {
             status: "error",
