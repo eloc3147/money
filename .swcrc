@@ -9,12 +9,17 @@
     "jsc": {
         "parser": {
             "syntax": "typescript",
-            "tsx": false,
             "decorators": false,
             "dynamicImport": false,
             "importMeta": false,
             "topLevelAwait": true
         },
-        "target": "es2018"
+        "target": "es2018",
+        "minify": {
+            "compress": {
+                "unused": true
+            },
+            "mangle": true
+        }
     }
 }

@@ -1,15 +1,20 @@
 mod migrations;
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
+use chrono::Local;
 use log::{error, info};
-use rocket::fairing::AdHoc;
-use rocket_db_pools::sqlx::{self, Row, SqlitePool};
-use rocket_db_pools::Database;
-use tokio;
-
 use migrations::MIGRATIONS;
+use rocket::fairing::AdHoc;
+use rocket_db_pools::{
+    sqlx::{self, Row, SqlitePool},
+    Database,
+};
+use tokio::{self};
 
 #[derive(Database)]
 #[database("money_db")]
@@ -45,25 +50,49 @@ async fn setup_db_inner(db: &Db, data_dir: PathBuf) -> Result<()> {
         .context("Failed to crate backup directory")?;
 
     while version < MIGRATIONS.len() {
-        info!("Migrating database to version {}", version + 1);
+        info!("Migrating database from version {}", version);
 
-        backup_db(&db, &backup_dir.join(format!("backup_v{version}.sqlite")))
+        backup_db(&db, &backup_dir, format!("backup_v{version}").as_str())
             .await
             .context("Failed to backup database")?;
 
         sqlx::raw_sql(&MIGRATIONS[version])
             .execute(&**db)
             .await
-            .context(format!("Failed to apply migration v{}", version))?;
+            .context(format!("Failed to migrate db from version {}", version))?;
 
         version += 1;
     }
 
+    // Clear temp data
+    sqlx::query(concat!(
+        "DELETE FROM pending_upload_cells;",
+        "DELETE FROM pending_uploads;"
+    ))
+    .execute(&**db)
+    .await?;
+
     Ok(())
 }
 
-async fn backup_db(db: &Db, path: &Path) -> Result<()> {
-    sqlx::raw_sql(format!("VACUUM main INTO '{}'", path.to_string_lossy()).as_str())
+async fn backup_db(db: &Db, directory: &Path, prefix: &str) -> Result<()> {
+    let backup_path = loop {
+        let date_stamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
+        let path = directory.join(format!("{}_{}.sqlite", prefix, date_stamp));
+
+        if path.exists() {
+            warn!(
+                "Backup path \"{:?}\" already exists. Waiting for a new timestamp to retry",
+                &path
+            );
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            continue;
+        }
+
+        break path;
+    };
+
+    sqlx::raw_sql(format!("VACUUM main INTO '{}'", backup_path.to_string_lossy()).as_str())
         .execute(&**db)
         .await?;
 

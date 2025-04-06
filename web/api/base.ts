@@ -1,24 +1,9 @@
 import { MoneyError } from "../money";
 
-export const HEADER_OPTIONS = [
-    "-",
-    "Date",
-    "Name",
-    "Description",
-    "Amount",
-];
 
-
-export const REQUIRED_HEADERS = [
-    "Date",
-    "Description",
-    "Amount",
-];
-
-
-interface MoneyMsg {
+interface MoneyMsg<R> {
     status: string,
-    response: any
+    response: R
 }
 
 
@@ -28,7 +13,7 @@ interface MoneyErrorMsg {
 }
 
 
-type MoneyResponse = MoneyMsg | MoneyErrorMsg;
+type MoneyResponse<R> = MoneyMsg<R> | MoneyErrorMsg;
 
 
 class MoneyApiError extends MoneyError {
@@ -40,12 +25,12 @@ class MoneyApiError extends MoneyError {
     }
 }
 
-async function api_request(endpoint: RequestInfo, init_data: RequestInit): Promise<any> {
-    let resp = await fetch("/api/" + endpoint, init_data)
-        .then(async (resp) => await resp.json() as MoneyResponse);
+async function api_request<R>(endpoint: RequestInfo, init_data: RequestInit): Promise<R> {
+    const resp = await fetch("/api/" + endpoint, init_data)
+        .then(async (resp) => await resp.json() as MoneyResponse<R>);
 
     if (resp.status == "ok") {
-        return (resp as MoneyMsg).response;
+        return (resp as MoneyMsg<R>).response;
     } else if (resp.status == "error") {
         throw new MoneyApiError((resp as MoneyErrorMsg).msg, endpoint)
     } else {
@@ -54,19 +39,19 @@ async function api_request(endpoint: RequestInfo, init_data: RequestInit): Promi
 }
 
 
-export async function api_post(endpoint: RequestInfo, body: BodyInit | null, content_type: string): Promise<any> {
+export async function api_post<R>(endpoint: RequestInfo, body: BodyInit | null, content_type: string): Promise<R> {
     return await api_request(
         endpoint, { method: "post", body: body, headers: new Headers({ "content-type": content_type }) }
     );
 }
 
 
-export async function api_json_post(endpoint: RequestInfo, body: any): Promise<any> {
+export async function api_json_post<B, R>(endpoint: RequestInfo, body: B): Promise<R> {
     return await api_post(endpoint, JSON.stringify(body), "application/json");
 }
 
 
-export async function api_get(endpoint: string, parameters?: Record<string, string>): Promise<any> {
+export async function api_get<R>(endpoint: string, parameters?: Record<string, string>): Promise<R> {
     if (typeof parameters !== 'undefined') {
         endpoint += "?" + new URLSearchParams(parameters);
     }

@@ -1,17 +1,19 @@
 pub mod db;
 mod schema;
-mod upload;
+pub mod upload;
+
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use async_mutex::Mutex;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use uuid::Uuid;
-
-use crate::error::{MoneyError, Result};
 use schema::{load_data, Account, Data};
 use upload::PendingUpload;
+use uuid::Uuid;
 
-pub use self::upload::{HeaderOption, SubmitResult};
+pub use self::upload::{HeaderOption, SubmitResult, DATE_FORMATS};
+use crate::error::{MoneyError, Result};
 
 pub type BackendHandle = Mutex<Backend>;
 
@@ -22,13 +24,13 @@ pub struct Backend {
 }
 
 impl Backend {
-    pub async fn load(data_dir: PathBuf) -> Result<BackendHandle> {
-        let inner = load_data(&data_dir).await?;
+    pub async fn load(data_dir: &Path) -> Result<BackendHandle> {
+        let data = load_data(&data_dir).await?;
         let pending_uploads = HashMap::new();
         Ok(BackendHandle::new(Backend {
-            data: inner,
-            data_dir,
+            data,
             pending_uploads,
+            data_dir: data_dir.into(),
         }))
     }
 
@@ -97,12 +99,13 @@ impl Backend {
         &self,
         upload_id: Uuid,
         header_selections: &[HeaderOption],
+        date_format: usize,
     ) -> Result<SubmitResult> {
         let upload = match self.pending_uploads.get(&upload_id) {
             Some(u) => u,
             None => return Err(MoneyError::NotFound),
         };
 
-        upload.try_submit(&header_selections)
+        upload.try_submit(&header_selections, date_format)
     }
 }

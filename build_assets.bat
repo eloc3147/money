@@ -1,5 +1,6 @@
 @echo off
 setlocal
 
-del static\web.js
+del /Q assets
+copy static assets
 call npx spack

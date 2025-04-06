@@ -5,7 +5,6 @@ import { get_accounts, add_account } from "./api/account";
 
 export class AccountsPage implements Page {
     el: ColumnView;
-    title: HTMLParagraphElement;
     table: Table;
     error_label: HTMLDivElement;
     error_set: boolean;
@@ -13,13 +12,13 @@ export class AccountsPage implements Page {
     add_account_submit: HTMLElement;
 
     constructor() {
-        this.title = el("p", { class: "title is-1" }, "Accounts");
         this.table = new Table(["Account Name"]);
         this.error_label = el("div", { className: "message-body is-hidden" }, "");
         this.add_account_input = el("input", { type: "text", placeholder: "Account Name", class: "input" });
         this.add_account_submit = el("button", "Add Account", { class: "button is-link" });
+
         this.el = new ColumnView("is-half", [
-            this.title,
+            el("p", { class: "title is-1" }, "Accounts"),
             this.table,
             el("hr"),
             el("article", { className: "message is-danger" }, this.error_label),
@@ -30,23 +29,16 @@ export class AccountsPage implements Page {
                 ], { class: "field is-grouped" })
             ])
         ]);
+
         this.error_set = false;
 
-        this.add_account_input.oninput = (evt) => {
+        this.add_account_input.oninput = (_evt) => {
             this.set_error(null);
         }
 
         this.add_account_submit.onclick = async (evt) => {
             evt.preventDefault();
-
-            let name = this.add_account_input.value;
-            if (name.length < 1) {
-                this.set_error("Account name must not be empty");
-                return;
-            }
-
-            await add_account(name);
-            await this.update_list();
+            this.submit();
         };
     }
 
@@ -55,6 +47,19 @@ export class AccountsPage implements Page {
     }
 
     async onremount() {
+        await this.update_list();
+    }
+
+    submit() {
+        const name = this.add_account_input.value;
+        if (name.length < 1) {
+            this.set_error("Account name must not be empty");
+            return;
+        }
+
+        await add_account(name);
+
+        this.add_account_input.value = "";
         await this.update_list();
     }
 
@@ -75,7 +80,7 @@ export class AccountsPage implements Page {
     }
 
     async update_list() {
-        let accounts = await get_accounts();
+        const accounts = await get_accounts();
 
         this.table.clear_rows();
         this.table.add_plain_rows(accounts.accounts.map((a) => [a]));

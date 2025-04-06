@@ -67,7 +67,7 @@ class MoneyApp {
             unmount(this.content, this.current);
         }
 
-        let view = this.page_map[page_name];
+        const view = this.page_map[page_name];
 
         mount(this.content, view);
         this.current = view;

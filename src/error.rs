@@ -9,7 +9,6 @@ use rocket::{
     serde::{json::Json, Serialize},
 };
 use uuid;
-use yansi::Paint;
 
 #[derive(Serialize, Debug)]
 struct MoneyErrorMsg {
@@ -25,11 +24,13 @@ pub enum MoneyError {
     MissingEndpoint(String),
     InvalidUuid(uuid::Error),
     RowIndex(usize),
+    // DatabaseError(bool),
     DataCorrupted(&'static str),
     ServerError(rocket::Error),
     AccountAlreadyExists,
     NotFound,
     OperationCancelled,
+    InvalidDateFormat,
 }
 
 impl MoneyError {
@@ -46,6 +47,7 @@ impl MoneyError {
             MoneyError::DataCorrupted(_) => "Error loading data",
             MoneyError::ServerError(_) => "Web server error",
             MoneyError::OperationCancelled => "A background task was cancelled",
+            MoneyError::InvalidDateFormat => "An invalid date format was supplied",
         }
     }
 
@@ -74,14 +76,15 @@ impl fmt::Display for MoneyError {
             MoneyError::ServerError(e) => write!(f, "{}: {}", self.msg(), e),
             MoneyError::AccountAlreadyExists
             | MoneyError::NotFound
-            | MoneyError::OperationCancelled => write!(f, "{}", self.msg()),
+            | MoneyError::OperationCancelled
+            | MoneyError::InvalidDateFormat => write!(f, "{}", self.msg()),
         }
     }
 }
 
 impl<'r> Responder<'r, 'static> for MoneyError {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
-        warn_!("{}", Paint::default(&self));
+        warn_!("{}", &self);
 
         let mut resp = Json(MoneyErrorMsg {
             status: "error",
@@ -126,6 +129,12 @@ impl From<uuid::Error> for MoneyError {
         MoneyError::InvalidUuid(error)
     }
 }
+
+// impl From<rusqlite::Error> for MoneyError {
+//     fn from(error: rusqlite::Error) -> Self {
+//         MoneyError::DatabaseError(error)
+//     }
+// }
 
 impl From<rocket::Error> for MoneyError {
     fn from(error: rocket::Error) -> Self {

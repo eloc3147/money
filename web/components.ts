@@ -2,7 +2,6 @@ import {
     el,
     List,
     list,
-    RedomComponentClass,
     RedomElement,
     setChildren,
     RedomQueryArgument,
@@ -11,7 +10,7 @@ import {
 } from "redom";
 
 
-export class Page implements RedomComponent {
+export interface Page extends RedomComponent {
     el: HTMLElement | SVGElement | RedomComponent;
 }
 
@@ -110,8 +109,8 @@ export class TdDropdown implements RedomComponent {
     }
 
     push_selection(): void {
-        let index = (this.select.el as HTMLSelectElement).selectedIndex;
-        let input_text = this.select.el.children[index].innerHTML.trim();
+        const index = (this.select.el as HTMLSelectElement).selectedIndex;
+        const input_text = this.select.el.children[index].innerHTML.trim();
 
         if (this.callback != null && this.column_index != null) {
             this.callback(this.column_index, input_text);
@@ -136,10 +135,10 @@ export class Table implements RedomComponent {
     constructor(headers: string[] | null) {
         this.rows = [];
 
-        let sections: HTMLTableSectionElement[] = [];
+        const sections: HTMLTableSectionElement[] = [];
 
         if (headers != null) {
-            let header_row = new Tr(Th);
+            const header_row = new Tr(Th);
             header_row.update(headers);
 
             sections.push(el("thead", header_row));
@@ -162,14 +161,14 @@ export class Table implements RedomComponent {
     }
 
     add_rows(rows: Tr<TableCellOptions>[]): void {
-        for (let row in rows) {
+        for (const row in rows) {
             this.add_row(rows[row]);
         }
     }
 
     add_plain_rows(rows: string[][] | number[][]): void {
-        for (let row in rows) {
-            let row_el = new Tr(Td);
+        for (const row in rows) {
+            const row_el = new Tr(Td);
             row_el.update(rows[row]);
             this.add_row(row_el);
         }

@@ -40,3 +40,12 @@ export async function submit_upload(upload_id: string, header_selections: string
         `upload/${upload_id}/submit`, { header_selections: header_selections }
     ) as SubmitUploadResponse;
 }
+
+export interface UploadOptions {
+    header_options: string[],
+    date_formats: string[],
+}
+
+export async function get_upload_options(): Promise<UploadOptions> {
+    return await api_get("upload/options") as UploadOptions;
+}

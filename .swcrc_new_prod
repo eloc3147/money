@@ -1,0 +1,45 @@
+{
+    "minify": true,
+    "module": {
+        "type": "es6",
+        "strict": true,
+        "strictMode": true,
+        "lazy": false,
+        "noInterop": false
+    },
+    "jsc": {
+        "parser": {
+            "syntax": "typescript",
+            "tsx": false,
+            "decorators": false,
+            "dynamicImport": false,
+            "importMeta": false,
+            "topLevelAwait": true
+        },
+        "target": "es2022",
+        "transform": {
+            "optimizer": {
+                "simplify": true
+            }
+        },
+        "minify": {
+            "compress": {
+                "arguments": true,
+                "booleans_as_integers": true,
+                "computed_props": true,
+                "conditionals": true,
+                "dead_code": true,
+                "directives": true,
+                "ecma": 2022,
+                "hoist_funs": true,
+                "hoist_vars": true,
+                "reduce_funcs": true,
+                "reduce_vars": true,
+                "switches": true
+            },
+            "mangle": {
+                "properties": {}
+            }
+        }
+    }
+}

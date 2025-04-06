@@ -5,7 +5,7 @@ module.exports = config({
         web: __dirname + "/web/money.ts",
     },
     output: {
-        path: __dirname + "/static",
+        path: __dirname + "/assets",
         module: {},
     },
 });

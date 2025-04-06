@@ -1,5 +1,5 @@
+.vscode/
 node_modules/
-/target
-/static/web.js
-/static/web.js.map
-/static/money_web_bg.wasm
+target/
+assets/
+build/

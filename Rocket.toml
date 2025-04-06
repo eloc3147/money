@@ -1,5 +1,5 @@
 ## defaults for _all_ profiles
 [default]
 address = "127.0.0.1"
-limits = { forms = "64 kB", json = "10 MiB" }
+limits = { forms = "64 kB", json = "100 MiB" }
 port = 9234

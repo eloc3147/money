@@ -3,10 +3,11 @@ extern crate rocket;
 
 mod api;
 mod backend;
+mod config;
 mod error;
 
 use error::Result;
-use rocket::{fs::FileServer, log::LogLevel, Config};
+use rocket::fs::FileServer;
 use rocket_db_pools::Database;
 use yansi::Paint;
 
@@ -21,18 +22,15 @@ async fn run() -> Result<()> {
         &data_dir.to_string_lossy()
     );
 
-    let data = backend::Backend::load(data_dir).await?;
-
-    let mut config = Config::from(Config::figment());
-    config.log_level = LogLevel::Debug;
+    let data = backend::Backend::load(&data_dir).await?;
 
     println!("{}", Paint::blue("Launching web server."));
-    let _ = rocket::custom(config)
+    let _ = rocket::custom(config::fetch(&data_dir))
         .attach(backend::db::Db::init())
-        .attach(backend::db::build_fairing(data_dir))
+        .attach(backend::db::setup_db(data_dir))
         .attach(api::stage())
         .manage(data)
-        .mount("/", FileServer::from("static"))
+        .mount("/", FileServer::from("assets"))
         .launch()
         .await;
 
@@ -50,7 +48,7 @@ async fn main() {
         Ok(_) => println!("\n{}", Paint::blue("Money app exiting")),
         Err(e) => {
             println!("\n{}", Paint::red("Money app crashed").bold());
-            println!("{}", Paint::yellow(e).bold());
+            println!("{}", e.yellow().bold());
         }
     }
 }

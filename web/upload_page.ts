@@ -1,23 +1,24 @@
-import { el, mount, RedomComponent, setChildren } from "redom";
+import { el, RedomComponent, setChildren } from "redom";
 import { Table, ColumnView, OptionConfig, Page, Tr, TdDropdown, Td } from "./components";
-import { HEADER_OPTIONS, REQUIRED_HEADERS } from "./api/base";
-import { add_upload, get_upload_rows, submit_upload } from "./api/upload";
+import { add_upload, get_upload_rows, submit_upload, get_upload_options, UploadOptions } from "./api/upload";
 
+
+const UPLOAD_OPTIONS: UploadOptions = await get_upload_options();
 
 export class UploadPage implements Page {
-    title: HTMLParagraphElement;
+    // title: HTMLParagraphElement;
     subtitle: HTMLParagraphElement;
     error_label: HTMLDivElement;
     error_box: HTMLElement;
     upload_view: HTMLElement;
 
-    input_field: HTMLDivElement;
-    load_field: HTMLDivElement;
+    // input_field: HTMLDivElement;
+    // load_field: HTMLDivElement;
 
-    show_more_wrapper: HTMLFieldSetElement;
-    submit_wrapper: HTMLFieldSetElement;
-    show_more_button: HTMLButtonElement;
-    submit_button: HTMLButtonElement;
+    // show_more_wrapper: HTMLFieldSetElement;
+    // submit_wrapper: HTMLFieldSetElement;
+    // show_more_button: HTMLButtonElement;
+    // submit_button: HTMLButtonElement;
 
     el: ColumnView;
 
@@ -36,7 +37,7 @@ export class UploadPage implements Page {
         ]);
     }
 
-    onmount() {
+    onmount(): void {
         this.el.set_column_args("is-half");
         this.set_error(null);
         this.set_subtitle("Select a file");
@@ -45,7 +46,7 @@ export class UploadPage implements Page {
         ]);
     }
 
-    set_error(error_msg: string | null) {
+    set_error(error_msg: string | null): void {
         if (error_msg !== null) {
             this.error_label.textContent = error_msg;
             this.error_label.className = "message-body";
@@ -55,11 +56,11 @@ export class UploadPage implements Page {
         }
     }
 
-    set_subtitle(subtitle: string) {
+    set_subtitle(subtitle: string): void {
         this.subtitle.innerText = subtitle;
     }
 
-    async load_file(file: File) {
+    async load_file(file: File): Promise<void> {
         await add_upload(file)
             .then((resp) => {
                 this.set_error(null);
@@ -72,7 +73,7 @@ export class UploadPage implements Page {
             });
     }
 
-    async submit(upload_preview: UploadPreview) {
+    async submit(upload_preview: UploadPreview): Promise<void> {
         await submit_upload(upload_preview.upload_id, upload_preview.header_selections)
             .then((resp) => {
                 if (resp.status == "success") {
@@ -83,14 +84,16 @@ export class UploadPage implements Page {
                         new UploadSubmitted()
                     ]);
                 } else {
-                    let error;
-
                     upload_preview.clear_cell_error();
+
+                    let error;
                     if (resp.status == "header_error") {
                         error = `Header error: ${resp.header_error}`;
                     } else if (resp.status == "cell_error") {
                         upload_preview.set_cell_error(resp.row as number, resp.col as number);
                         error = resp.cell_error;
+                    } else {
+                        error = `Unknown error: ${resp.status}`;
                     }
 
                     this.set_error(error);
@@ -140,7 +143,7 @@ class UploadPreview implements RedomComponent {
 
     upload_id: string;
     header_suggestions: string[];
-    required_headers: string[];
+    // required_headers: string[];
     column_count: number;
     upload_row_count: number;
 
@@ -176,8 +179,8 @@ class UploadPreview implements RedomComponent {
         this.error_row = null;
         this.error_cell = null;
 
-        let option_configs = header_suggestions.map((suggestion) => {
-            return HEADER_OPTIONS.map(option => {
+        const option_configs = header_suggestions.map((suggestion) => {
+            return UPLOAD_OPTIONS.header_options.map(option => {
                 return {
                     value: option,
                     selected: option == suggestion
@@ -187,10 +190,11 @@ class UploadPreview implements RedomComponent {
 
         this.table = new Table(headers.map(h => '"' + h + '"'));
 
-        let suggestion_row = new Tr(TdDropdown);
+        const suggestion_row = new Tr(TdDropdown);
+        console.log(suggestion_row);
         suggestion_row.update(
             option_configs,
-            { callback: (column_index, selection) => this.process_update(column_index, selection) }
+            { callback: this.process_update }
         );
         this.table.add_rows([suggestion_row]);
 
@@ -224,14 +228,14 @@ class UploadPreview implements RedomComponent {
     }
 
     async add_rows(): Promise<void> {
-        let remaining_rows = Math.max(0, this.upload_row_count - this.current_row_count);
-        let row_count = Math.min(10, remaining_rows);
+        const remaining_rows = Math.max(0, this.upload_row_count - this.current_row_count);
+        const row_count = Math.min(10, remaining_rows);
 
         if (row_count > 0) {
-            let resp = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
-            let rows: Tr<Td>[] = [];
+            const resp = await get_upload_rows(this.upload_id, this.current_row_count, row_count);
+            const rows: Tr<Td>[] = [];
             for (let i = 0; i < resp.cells.length; i += this.column_count) {
-                let row = new Tr(Td);
+                const row = new Tr(Td);
                 row.update(resp.cells.slice(i, i + this.column_count));
                 rows.push(row);
             }
@@ -250,11 +254,11 @@ class UploadPreview implements RedomComponent {
 
     set_cell_error(row_index: number, cell_index: number): void {
         // TODO: Check if row is loaded, and load it plus a buffer if required
-        let row = this.table.get_row(row_index + 1) as Tr<Td>;
+        const row = this.table.get_row(row_index + 1) as Tr<Td>;
         this.error_row = row;
         row.el.classList.add("has-background-danger-light");
 
-        let cell = row.get_cell(cell_index);
+        const cell = row.get_cell(cell_index);
         this.error_cell = cell;
         cell.el.classList.add("has-background-danger");
     }
