@@ -1,3 +1,4 @@
+pub mod importer;
 pub mod old;
 
 #[macro_use]

@@ -7,7 +7,13 @@ version = "0.2.1"
 [[bin]]
 name = "serve"
 
+[[bin]]
+name = "import"
+
 [dependencies]
+color-eyre = "0.6.3"
+crossterm = "0.28.1"
+ratatui = "0.29.0"
 
 # Old
 anyhow = "1.0"
