@@ -5,6 +5,7 @@ use color_eyre::{
     eyre::{Context, eyre},
 };
 use console::{Emoji, style};
+use indicatif::MultiProgress;
 use money::importer::config::AppConfig;
 use money::importer::loader;
 
@@ -13,25 +14,27 @@ fn main() -> Result<()> {
 
     println!("{}", style("Money Importer").white());
 
-    println!(
-        "{} {}Loading config...",
-        style("[1/4]").bold().dim(),
-        Emoji("📄 ", ""),
-    );
-
     let data_dir = dirs::data_dir()
         .ok_or_else(|| eyre!("OS user data directory missing"))?
         .join("money_app");
+    let config_path = data_dir.join("config.toml");
 
-    let config =
-        AppConfig::load(&data_dir.join("config.toml")).wrap_err("Failed to load config")?;
-    println!("\n{:#?}", config);
+    println!(
+        "{} {}Loading config ({})...",
+        style("[1/4]").bold().dim(),
+        Emoji("📄 ", ""),
+        config_path.to_string_lossy()
+    );
 
-    loader::load_accounts(&config.accounts).wrap_err("Failed to load accounts")?;
+    let config = AppConfig::load(&config_path).wrap_err("Failed to load config")?;
 
-    // let mut terminal = ratatui::init();
-    // let result = ImporterApp::new()?.run(&mut terminal);
-    // ratatui::restore();
+    println!(
+        "{} {}Loading transaction files...",
+        style("[2/4]").bold().dim(),
+        Emoji("🏦 ", ""),
+    );
+    let load_progress = MultiProgress::new();
+    loader::load_accounts(&config.accounts, &load_progress).wrap_err("Failed to load accounts")?;
 
     Ok(())
 }

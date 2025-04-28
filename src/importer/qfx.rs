@@ -14,8 +14,6 @@ use encoding_rs::WINDOWS_1252;
 use rust_decimal::Decimal;
 
 pub fn load_file(path: &Path) -> Result<()> {
-    println!("TMP: Load QFX {:?}", path);
-
     let mut reader = BufReader::new(File::open(path).wrap_err("Failed to open file")?);
 
     // Read header
@@ -48,8 +46,6 @@ pub fn load_file(path: &Path) -> Result<()> {
     let mut parser = DocumentParser::new(lexer);
 
     let document = parser.parse_document()?;
-
-    println!("Contents: {:#?}", document);
 
     Ok(())
 }
@@ -129,7 +125,7 @@ fn read_header(src: &mut BufReader<File>) -> Result<Header> {
             break;
         }
 
-        let mut header = str::from_utf8(line_ref).wrap_err_with(|| {
+        let header = str::from_utf8(line_ref).wrap_err_with(|| {
             format!(
                 "Invalid utf8 in header: {:?}",
                 String::from_utf8_lossy(line_ref)
