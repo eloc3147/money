@@ -960,6 +960,7 @@ dependencies = [
  "dirs",
  "encoding_rs",
  "indicatif",
+ "regex",
  "rocket",
  "rust_decimal",
  "self_cell",

@@ -14,8 +14,16 @@ pub struct AccountConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TransactionRule {
+    pub priority: u8,
+    pub category: String,
+    pub patterns: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AppConfig {
-    pub accounts: Vec<AccountConfig>,
+    pub account: Vec<AccountConfig>,
+    pub rule: Vec<TransactionRule>,
 }
 
 impl AppConfig {
