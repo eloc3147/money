@@ -1,8 +1,10 @@
+use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use color_eyre::{
     Result,
-    eyre::{Context, eyre},
+    eyre::{Context, eyre, bail},
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use rust_decimal::Decimal;
 use std::path::Path;
 
 use super::{config::AccountConfig, qfx};
@@ -51,7 +53,7 @@ fn load_dir(base_path: &Path, path: &Path, progress: &MultiProgress) -> Result<(
                     .to_string_lossy()
             ));
             spinner.tick();
-            load_file(&entry_path)?;
+            load_file(&entry_path).wrap_err_with(|| format!("Error loading file {:?}", &entry_path))?;
         }
     }
 
@@ -60,14 +62,47 @@ fn load_dir(base_path: &Path, path: &Path, progress: &MultiProgress) -> Result<(
     Ok(())
 }
 
+#[derive(Debug)]
+pub enum FileTransactionType {
+    Debit,
+    Credit,
+    Pos,
+    Atm,
+    Fee,
+    Other,
+}
+
+#[derive(Debug)]
+pub struct FileTransaction<'a> {
+    pub transaction_type: FileTransactionType,
+    pub date_posted: DateTime<FixedOffset>,
+    pub amount: Decimal,
+    pub transaction_id: &'a str,
+    pub name: &'a str,
+    pub memo: Option<&'a str>,
+}
+
+pub trait TransactionReader<'a> {
+    fn read(&'a self) -> Result<impl Iterator<Item = Result<FileTransaction<'a>>>>;
+}
+
 fn load_file(path: &Path) -> Result<()> {
     let ext = path
         .extension()
         .ok_or_else(|| eyre!("File missing extension: {:?}", path))?
         .to_ascii_lowercase();
 
-    match &*ext.to_string_lossy() {
-        "qfx" => qfx::load_file(path),
-        ext => Err(eyre!("Unrecognized file type: {}", ext)),
+    let loader = match &*ext.to_string_lossy() {
+        "qfx" => {
+            Box::new(qfx::QfxReader::open(path)?)
+        }
+        "csv" => return Ok(()),
+        ext => bail!("Unrecognized file type: {}", ext),
+    };
+    
+    for transaction in loader.read()? {
+        println!("{:?}", transaction?);
     }
+
+    Ok(())
 }

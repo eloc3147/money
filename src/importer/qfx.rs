@@ -1,9 +1,11 @@
+// Compatible with Tangerine and Capital One QFX files
+
 use std::{
     borrow::Cow,
     fs::File,
     io::{BufRead, BufReader, Read},
     path::Path,
-    str::{CharIndices, FromStr},
+    str::FromStr,
 };
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
@@ -13,90 +15,146 @@ use color_eyre::{
 };
 use encoding_rs::WINDOWS_1252;
 use rust_decimal::Decimal;
+use self_cell::self_cell;
 
-pub fn load_file(path: &Path) -> Result<()> {
-    let mut reader = BufReader::new(File::open(path).wrap_err("Failed to open file")?);
+use super::loader::{FileTransaction, FileTransactionType, TransactionReader};
 
-    // Determine header type
-    let buf = reader.fill_buf().wrap_err("Failed to read file")?;
-    let mut skipped = 0;
-    let mut xml = None;
-    for byte in buf {
-        match *byte {
-            b'<' => {
-                xml = Some(true);
-                break;
-            }
-            b if b.is_ascii_whitespace() => {}
-            b if b.is_ascii_alphabetic() => {
-                xml = Some(false);
-                break;
-            }
-            b => bail!("Invalid character: {}", b),
-        }
-        skipped += 1;
+#[derive(Debug)]
+struct DecodedContents<'a>(pub Cow<'a, str>);
+
+self_cell!(
+    struct FileContents {
+        owner: Vec<u8>,
+
+        #[covariant]
+        dependent: DecodedContents,
     }
-    reader.consume(skipped);
 
-    let is_xml = xml.ok_or_eyre("File is empty")?;
-    // Read header
-    let encoding = if is_xml {
-        let header = read_xml_header(&mut reader).wrap_err("Failed to read header")?;
-        if header.ofxheader != 200 {
-            bail!("Unsupported header: {}", header.ofxheader);
+    impl {Debug}
+);
+
+pub struct QfxReader {
+    contents: FileContents,
+    is_xml: bool,
+}
+
+impl QfxReader {
+    pub fn open(path: &Path) -> Result<Self> {
+        let mut reader = BufReader::new(File::open(path).wrap_err("Failed to open file")?);
+
+        // Determine header type
+        let buf = reader.fill_buf().wrap_err("Failed to read file")?;
+        let mut skipped = 0;
+        let mut xml = None;
+        for byte in buf {
+            match *byte {
+                b'<' => {
+                    xml = Some(true);
+                    break;
+                }
+                b if b.is_ascii_whitespace() => {}
+                b if b.is_ascii_alphabetic() => {
+                    xml = Some(false);
+                    break;
+                }
+                b => bail!("Invalid character: {}", b),
+            }
+            skipped += 1;
         }
-        if header.version != 202 {
-            bail!("Unsupported version: {}", header.version);
-        }
-        header.encoding
-    } else {
-        let header = read_sgml_header(&mut reader).wrap_err("Failed to read header")?;
-        if header.ofxheader != 100 {
-            bail!("Unsupported header: {}", header.ofxheader);
-        }
-        if header.version != 102 {
-            bail!("Unsupported version: {}", header.version);
-        }
-        header.encoding
-    };
+        reader.consume(skipped);
 
-    // Load whole file
-    let mut file_bytes = Vec::new();
-    reader
-        .read_to_end(&mut file_bytes)
-        .wrap_err("Failed to read file")?;
+        let is_xml = xml.ok_or_eyre("File is empty")?;
+        // Read header
+        let encoding = if is_xml {
+            let header = read_xml_header(&mut reader).wrap_err("Failed to read header")?;
+            if header.ofxheader != 200 {
+                bail!("Unsupported header: {}", header.ofxheader);
+            }
+            if header.version != 202 {
+                bail!("Unsupported version: {}", header.version);
+            }
+            header.encoding
+        } else {
+            let header = read_sgml_header(&mut reader).wrap_err("Failed to read header")?;
+            if header.ofxheader != 100 {
+                bail!("Unsupported header: {}", header.ofxheader);
+            }
+            if header.version != 102 {
+                bail!("Unsupported version: {}", header.version);
+            }
+            header.encoding
+        };
 
-    let file_str = match encoding {
-        HeaderEncoding::Windows1252 => WINDOWS_1252.decode(&file_bytes).0,
-        HeaderEncoding::Utf8 => Cow::Borrowed(str::from_utf8(&file_bytes)?),
-    };
+        // Load whole file
+        let mut file_bytes = Vec::new();
+        reader
+            .read_to_end(&mut file_bytes)
+            .wrap_err("Failed to read file")?;
 
-    // Parse file
-    let lexer = LexerIterator::new(&file_str, is_xml);
-    let mut parser = DocumentParser::new(lexer);
+        let contents = FileContents::new(file_bytes, |bytes| match encoding {
+            HeaderEncoding::Windows1252 => DecodedContents(WINDOWS_1252.decode(bytes).0),
+            HeaderEncoding::Utf8 => DecodedContents(Cow::Borrowed(
+                str::from_utf8(bytes)
+                    .expect("Invalid UTF-8. Not bothering to handle this case sorry"),
+            )),
+        });
 
-    let document = parser.parse_document()?;
+        Ok(Self { contents, is_xml })
+    }
+}
 
-    Ok(())
+impl<'a> TransactionReader<'a> for QfxReader {
+    fn read(&'a self) -> Result<impl Iterator<Item = Result<FileTransaction<'a>>>> {
+        let lexer = Lexer::new(self.contents.borrow_dependent(), self.is_xml);
+        Ok(DocumentParser::new(lexer))
+    }
 }
 
 trait PutOrElse<T> {
-    fn put_or_else<F>(&mut self, name: &str, op: F) -> Result<()>
-    where
-        F: FnOnce() -> Result<T>;
+    fn put_or_else(&mut self, name: &str, value: Result<T>) -> Result<()>;
 }
 
 impl<T> PutOrElse<T> for Option<T> {
-    fn put_or_else<F>(&mut self, name: &str, op: F) -> Result<()>
-    where
-        F: FnOnce() -> Result<T>,
-    {
+    fn put_or_else(&mut self, name: &str, value: Result<T>) -> Result<()> {
         match self {
             Some(_) => Err(eyre!("Duplicate key '{}'", name)),
             None => {
-                *self = Some(op()?);
+                *self = Some(value.wrap_err_with(|| eyre!("Error parsing key '{}'", name))?);
                 Ok(())
             }
+        }
+    }
+}
+
+trait TrackState {
+    fn set_with(&mut self, struct_name: &str, check: Result<()>) -> Result<()>;
+    fn set_with_value<T>(&mut self, struct_name: &str, check: Result<T>) -> Result<()> {
+        self.set_with(struct_name, check.map(|_| ()))
+    }
+
+    fn ensure_field(&self, field_name: &str) -> Result<()>;
+}
+
+impl TrackState for bool {
+    fn set_with(&mut self, struct_name: &str, check: Result<()>) -> Result<()> {
+        match (check, *self) {
+            (Ok(()), false) => {
+                *self = true;
+                Ok(())
+            }
+            (Ok(()), true) => Err(eyre!("Duplicate struct '{}'", struct_name)),
+            (Err(e), false) => {
+                Err(e).wrap_err_with(|| format!("Failed to parse struct '{}'", struct_name))
+            }
+            (Err(e), true) => Err(e)
+                .wrap_err_with(|| format!("Failed to parse duplicate struct '{}'", struct_name)),
+        }
+    }
+
+    fn ensure_field(&self, field_name: &str) -> Result<()> {
+        match *self {
+            true => Ok(()),
+            false => Err(eyre!("Missing field '{}'", field_name)),
         }
     }
 }
@@ -198,7 +256,7 @@ fn read_sgml_header(src: &mut BufReader<File>) -> Result<Header> {
                 if encoding {
                     bail!("Repeated header 'ENCODING");
                 }
-                let parsed = match value {
+                match value {
                     "USASCII" => encoding = true,
                     v => bail!("Unrecognized ENCODING value: {:?}", v),
                 };
@@ -451,6 +509,7 @@ enum QfxToken<'a> {
     Value(&'a str),
 }
 
+#[derive(Debug)]
 enum LexerState {
     Idle,
     CaptureKey(usize),
@@ -458,21 +517,21 @@ enum LexerState {
     CaptureValue(usize),
 }
 
-struct LexerIterator<'a> {
+struct Lexer<'a> {
     state: LexerState,
-    src: &'a str,
-    char_iter: CharIndices<'a>,
+    src: &'a DecodedContents<'a>,
+    next_idx: usize,
     hide_field_close: bool,
     last_item_was_value: bool,
     last_open: Option<&'a str>,
 }
 
-impl<'a> LexerIterator<'a> {
-    fn new(src: &'a str, hide_field_close: bool) -> Self {
+impl<'a> Lexer<'a> {
+    fn new(src: &'a DecodedContents<'a>, hide_field_close: bool) -> Self {
         Self {
             state: LexerState::Idle,
             src,
-            char_iter: src.char_indices(),
+            next_idx: 0,
             hide_field_close,
             last_item_was_value: false,
             last_open: None,
@@ -483,11 +542,11 @@ impl<'a> LexerIterator<'a> {
         let item_start = idx - item_len;
         let start_pad = std::cmp::min(item_start, 5);
         let display_start = item_start - start_pad;
-        let display_end = std::cmp::min(self.src.len(), idx + 10);
+        let display_end = std::cmp::min(self.src.0.len(), idx + 10);
         eyre!(
             "{0}: '{1}'\n{2:3$}{4:^<5$}",
             msg,
-            &self.src[display_start..display_end],
+            &self.src.0[display_start..display_end],
             "",
             msg.len() + 3 + start_pad + 1,
             "",
@@ -496,66 +555,78 @@ impl<'a> LexerIterator<'a> {
     }
 }
 
-impl<'a> Iterator for LexerIterator<'a> {
+impl<'a> Iterator for Lexer<'a> {
     type Item = Result<QfxToken<'a>>;
 
     fn next(&mut self) -> Option<Result<QfxToken<'a>>> {
+        let mut chars = self.src.0[self.next_idx..].char_indices();
+
         loop {
-            let Some((idx, char)) = self.char_iter.next() else {
+            let Some((idx, char)) = chars.next() else {
                 return match self.state {
                     LexerState::Idle => None,
                     LexerState::CaptureKey(start) | LexerState::CaptureCloseKey(start) => {
                         Some(Err(self.err(
                             "End of file in key",
-                            self.src.len() - 1,
-                            self.src.len() - start,
+                            self.src.0.len() - 1,
+                            self.src.0.len() - start,
                         )))
                     }
                     LexerState::CaptureValue(start) => {
-                        Some(Ok(QfxToken::Value(&self.src[start..])))
+                        self.state = LexerState::Idle;
+                        Some(Ok(QfxToken::Value(&self.src.0[start..])))
                     }
                 };
             };
+            let full_idx = self.next_idx + idx;
             match char {
                 '<' => match self.state {
                     LexerState::Idle => {
-                        self.state = LexerState::CaptureKey(idx);
+                        self.state = LexerState::CaptureKey(full_idx);
                     }
                     LexerState::CaptureKey(start) | LexerState::CaptureCloseKey(start) => {
+                        self.next_idx = full_idx + 1;
                         return Some(Err(self.err(
                             "Start of new key inside key",
-                            idx,
-                            idx - start,
+                            full_idx,
+                            full_idx - start,
                         )));
                     }
                     LexerState::CaptureValue(start) => {
-                        self.state = LexerState::CaptureKey(idx);
+                        self.state = LexerState::CaptureKey(full_idx);
                         self.last_item_was_value = true;
-                        let value = &self.src[start..idx];
+                        let value = &self.src.0[start..full_idx];
                         // Ignore empty values
                         if value.trim().len() == 0 {
-                            self.state = LexerState::CaptureKey(idx);
+                            self.state = LexerState::CaptureKey(full_idx);
                         } else {
+                            self.next_idx = full_idx + 1;
                             return Some(Ok(QfxToken::Value(value)));
                         }
                     }
                 },
                 '>' => match self.state {
                     LexerState::Idle | LexerState::CaptureValue(_) => {
-                        return Some(Err(self.err("End of key without start of key", idx, 1)));
+                        self.next_idx = full_idx + 1;
+                        return Some(Err(self.err(
+                            "End of key without start of key",
+                            full_idx,
+                            1,
+                        )));
                     }
                     LexerState::CaptureKey(start) => {
                         self.state = LexerState::Idle;
 
-                        let name = &self.src[start + 1..idx];
+                        let name = &self.src.0[start + 1..full_idx];
                         self.last_item_was_value = false;
                         self.last_open = Some(name);
+                        self.next_idx = full_idx + 1;
                         return Some(Ok(QfxToken::OpenKey(name)));
                     }
                     LexerState::CaptureCloseKey(start) => {
                         self.state = LexerState::Idle;
 
-                        let name = &self.src[start + 2..idx];
+                        let name = &self.src.0[start + 2..full_idx];
                         let hide = self.hide_field_close
                             && self.last_item_was_value
                             && self.last_open == Some(name);
@@ -564,6 +635,7 @@ impl<'a> Iterator for LexerIterator<'a> {
                         self.last_open = None;
 
                         if !hide {
+                            self.next_idx = full_idx + 1;
                             return Some(Ok(QfxToken::CloseKey(name)));
                         }
                     }
@@ -571,19 +643,29 @@ impl<'a> Iterator for LexerIterator<'a> {
                 '/' => match self.state {
                     LexerState::Idle | LexerState::CaptureValue(_) => {}
                     LexerState::CaptureKey(start) => {
-                        if start != idx.saturating_sub(1) {
-                            return Some(Err(self.err("Slash in key name", idx, idx - start)));
+                        if start != full_idx.saturating_sub(1) {
+                            self.next_idx = full_idx + 1;
+                            return Some(Err(self.err(
+                                "Slash in key name",
+                                full_idx,
+                                full_idx - start,
+                            )));
                         }
 
                         self.state = LexerState::CaptureCloseKey(start)
                     }
                     LexerState::CaptureCloseKey(start) => {
-                        return Some(Err(self.err("Slash in key name", idx, idx - start)));
+                        self.next_idx = full_idx + 1;
+                        return Some(Err(self.err(
+                            "Slash in key name",
+                            full_idx,
+                            full_idx - start,
+                        )));
                     }
                 },
                 '\r' | '\n' => {}
                 _ => match self.state {
-                    LexerState::Idle => self.state = LexerState::CaptureValue(idx),
+                    LexerState::Idle => self.state = LexerState::CaptureValue(full_idx),
                     LexerState::CaptureKey(_)
                     | LexerState::CaptureCloseKey(_)
                     | LexerState::CaptureValue(_) => {}
@@ -594,100 +676,20 @@ impl<'a> Iterator for LexerIterator<'a> {
 }
 
 #[derive(Debug)]
-pub struct Document<'a> {
-    sign_on_message_response: SignOnMessageResponseV1<'a>,
-    institution_message_response: InstitutionMessageResponseV1<'a>,
-}
-
-#[derive(Debug)]
-pub struct SignOnMessageResponseV1<'a> {
-    sign_on_response: SignOnResponse<'a>,
-}
-
-#[derive(Debug)]
-pub struct SignOnResponse<'a> {
-    status: Status<'a>,
-    server_date: DateTime<FixedOffset>,
-    language: &'a str,
-    last_profile_update: Option<DateTime<FixedOffset>>,
-    financial_institution: FinancialInstitution<'a>,
-    bank_id: u32,
-}
-
-#[derive(Debug)]
 pub enum Severity {
     Info,
 }
 
 #[derive(Debug)]
-pub struct Status<'a> {
-    code: u32,
-    severity: Severity,
-    message: Option<&'a str>,
-}
-
-#[derive(Debug)]
-pub struct FinancialInstitution<'a> {
-    organization: &'a str,
-    institution_id: u32,
-}
-
-#[derive(Debug)]
-pub struct InstitutionMessageResponseV1<'a> {
-    statement_transaction_response: StatementTransactionResponse<'a>,
-}
-
-#[derive(Debug)]
-pub struct StatementTransactionResponse<'a> {
-    unique_id: u32,
-    status: Status<'a>,
-    statement_response: StatementResponse<'a>,
-}
-
-#[derive(Debug)]
-pub struct StatementResponse<'a> {
-    default_currency: Currency,
-    bank_account_from: AccountFrom,
-    statement_transaction_data: StatementTransactionData<'a>,
-    ledger_balance: Balance,
-    available_balance: Balance,
-}
-
-#[derive(Debug)]
-pub enum Currency {
-    Cad,
-}
-
-#[derive(Debug)]
-pub struct AccountFrom {
-    bank_id: Option<u32>,
-    account_number: u32,
-    account_type: Option<AccountType>,
-}
-
-#[derive(Debug)]
-pub struct StatementTransactionData<'a> {
-    start_date: DateTime<FixedOffset>,
-    end_date: DateTime<FixedOffset>,
-    transactions: Vec<StatementTransaction<'a>>,
-}
-
-#[derive(Debug)]
 pub struct StatementTransaction<'a> {
     transaction_type: TransactionType,
-    date_posted: NaiveDateTime,
+    date_posted: DateTime<FixedOffset>,
     user_date: Option<NaiveDateTime>,
     amount: Decimal,
     transaction_id: &'a str,
     name: &'a str,
     account_to: Option<AccountTo>,
     memo: Option<&'a str>,
-}
-
-#[derive(Debug)]
-pub struct Balance {
-    amount: Decimal,
-    timestamp: DateTime<FixedOffset>,
 }
 
 #[derive(Debug)]
@@ -710,388 +712,347 @@ pub enum AccountType {
     Savings,
 }
 
+#[derive(Debug)]
+enum ParserState {
+    NotStarted,
+    ReadOpen,
+    ReadClose,
+    ReadInstitutionMessage,
+    ReadStatementTransactionResponse,
+    ReadStatementResponse,
+    ReadTransactionList,
+    ReadTransaction,
+}
+
 struct DocumentParser<'a> {
-    tokens: LexerIterator<'a>,
+    tokens: Lexer<'a>,
     local_timezone: Option<FixedOffset>,
+    // State tracking
+    state: ParserState,
+    read_sign_on_message_response: bool,
+    institution_message_response_name: Option<&'a str>,
+    statement_transaction_response_name: Option<&'a str>,
+    read_transaction_id: bool,
+    read_status: bool,
+    statement_response_name: Option<&'a str>,
+    read_currency: bool,
+    read_account_from: bool,
+    read_start_date: bool,
+    read_end_date: bool,
+    read_ledger_balance: bool,
+    read_available_balance: bool,
+    // Transaction
+    transaction_type: Option<TransactionType>,
+    date_posted: Option<DateTime<FixedOffset>>,
+    user_date: Option<NaiveDateTime>,
+    amount: Option<Decimal>,
+    transaction_id: Option<&'a str>,
+    name: Option<&'a str>,
+    account_to: Option<AccountTo>,
+    memo: Option<&'a str>,
 }
 
 impl<'a> DocumentParser<'a> {
-    fn new(tokens: LexerIterator<'a>) -> Self {
+    fn new(lexer: Lexer<'a>) -> Self {
         Self {
-            tokens,
+            tokens: lexer,
             local_timezone: None,
+            state: ParserState::NotStarted,
+            read_sign_on_message_response: false,
+            institution_message_response_name: None,
+            statement_transaction_response_name: None,
+            read_transaction_id: false,
+            read_status: false,
+            statement_response_name: None,
+            read_currency: false,
+            read_account_from: false,
+            read_start_date: false,
+            read_end_date: false,
+            read_ledger_balance: false,
+            read_available_balance: false,
+            transaction_type: None,
+            date_posted: None,
+            user_date: None,
+            amount: None,
+            transaction_id: None,
+            name: None,
+            account_to: None,
+            memo: None,
         }
     }
 
-    fn parse_document(&mut self) -> Result<Document> {
-        let document = self.get_ofx().wrap_err("Failed to parse struct 'OFX'")?;
-        self.expect_done()?;
-
-        Ok(document)
-    }
-
-    fn get_ofx(&mut self) -> Result<Document<'a>> {
-        let first_key = self.get_key()?;
-        if first_key != "OFX" {
-            bail!(
-                "Unexpected key '{}', expected key 'OFX' at start of document",
-                first_key
-            );
-        }
-
-        let mut sign_on_message_response = None;
-        let mut institution_message_response = None;
+    fn next_transaction(&mut self) -> Result<Option<StatementTransaction<'a>>> {
         loop {
-            match self.get_field("OFX")? {
-                Some("SIGNONMSGSRSV1") => {
-                    sign_on_message_response.put_or_else("SIGNONMSGSRSV1", || {
-                        self.get_sign_on_message_response_v1()
-                            .wrap_err("Failed to parse struct 'SIGNONMSGSRSV1'")
-                    })?
+            match self.state {
+                ParserState::NotStarted => {
+                    let first_key = self.get_key()?;
+                    if first_key != "OFX" {
+                        bail!("Unexpected key '{}' for state {:?}", first_key, self.state);
+                    }
+                    self.state = ParserState::ReadOpen;
                 }
-                Some("BANKMSGSRSV1") => {
-                    institution_message_response.put_or_else("BANKMSGSRSV1", || {
-                        self.get_msg_srs_v1("BANKMSGSRSV1")
-                            .wrap_err("Failed to parse struct 'BANKMSGSRSV1'")
-                    })?
+                ParserState::ReadOpen => match self.get_field("OFX")? {
+                    Some("SIGNONMSGSRSV1") => {
+                        let check = self.check_sign_on_message_response_v1();
+                        self.read_sign_on_message_response
+                            .set_with("SIGNONMSGSRSV1", check)?;
+                    }
+                    Some("BANKMSGSRSV1") => {
+                        self.institution_message_response_name
+                            .put_or_else("BANKMSGSRSV1", Ok("BANKMSGSRSV1"))?;
+                        self.state = ParserState::ReadInstitutionMessage;
+                    }
+                    Some("CREDITCARDMSGSRSV1") => {
+                        self.institution_message_response_name
+                            .put_or_else("CREDITCARDMSGSRSV1", Ok("CREDITCARDMSGSRSV1"))?;
+                        self.state = ParserState::ReadInstitutionMessage;
+                    }
+                    Some(key) => bail!("Unexpected key '{}' for state {:?}", key, self.state),
+                    None => {
+                        self.expect_done()?;
+                        self.state = ParserState::ReadClose;
+                    },
+                },
+                ParserState::ReadInstitutionMessage => {
+                    match self.get_field(self.institution_message_response_name.ok_or_eyre(
+                        "Missing institution response in ReadInstitutionMessage state",
+                    )?)? {
+                        Some("STMTTRNRS") => {
+                            self.statement_transaction_response_name
+                                .put_or_else("STMTTRNRS",  Ok("STMTTRNRS"))?;
+                            self.state = ParserState::ReadStatementTransactionResponse;
+                        }
+                        Some("CCSTMTTRNRS") => {
+                            self.statement_transaction_response_name
+                                .put_or_else("CCSTMTTRNRS", Ok("CCSTMTTRNRS"))?;
+                            self.state = ParserState::ReadStatementTransactionResponse;
+                        }
+                        Some(key) => bail!("Unexpected key '{}' for state {:?}", key, self.state),
+                        None => self.state = ParserState::ReadOpen,
+                    }
                 }
-                Some("CREDITCARDMSGSRSV1") => {
-                    institution_message_response.put_or_else("CREDITCARDMSGSRSV1", || {
-                        self.get_msg_srs_v1("CREDITCARDMSGSRSV1")
-                            .wrap_err("Failed to parse struct 'CREDITCARDMSGSRSV1'")
-                    })?
+                ParserState::ReadStatementTransactionResponse => match self.get_field(
+                    self.statement_transaction_response_name.ok_or_eyre(
+                        "Missing statement transaction response in ReadStatementTransactionRecord state",
+                    )?,
+                )? {
+                    Some("TRNUID") => {
+                        let check = self.get_u32();
+                        self
+                        .read_transaction_id
+                        .set_with_value("TRNUID", check)?},
+                    Some("STATUS") => {let check = self.check_status(); self.read_status.set_with("STATUS", check)?},
+                    Some("STMTRS") => {
+                        self.statement_response_name
+                            .put_or_else("STMTRS", Ok("STMTRS"))?;
+                        self.state = ParserState::ReadStatementResponse;
+                    }
+                    Some("CCSTMTRS") => {
+                        self.statement_response_name
+                            .put_or_else("CCSTMTRS", Ok("CCSTMTRS"))?;
+                        self.state = ParserState::ReadStatementResponse;
+                    }
+                    Some(key) => bail!("Unexpected key '{}' for state {:?}", key, self.state),
+                    None => self.state = ParserState::ReadInstitutionMessage,
+                },
+                ParserState::ReadStatementResponse => match self.get_field(self.statement_response_name.ok_or_eyre(
+                        "Missing statement response in ReadStatementResponse state",
+                    )?,)? {
+                    Some("CURDEF") => {
+                        let check = self.check_currency();
+                        self
+                        .read_currency
+                        .set_with("CURDEF", check)?},
+                    Some("BANKACCTFROM") => {
+                        let check = self.check_account_from("BANKACCTFROM");
+                        self
+                        .read_account_from
+                        .set_with("BANKACCTFROM",  check)?},
+                    Some("CCACCTFROM") => {
+                        let check = self.check_account_from("CCACCTFROM");
+                        self
+                        .read_account_from
+                        .set_with("CCACCTFROM",  check)?},
+                    Some("BANKTRANLIST") => self.state = ParserState::ReadTransactionList,
+                    Some("LEDGERBAL") => {
+                        let check = self.check_balance("LEDGERBAL");
+                        self.read_ledger_balance.set_with("LEDGERBAL", check)?;
+                    }
+                    Some("AVAILBAL") => {
+                        let check = self.check_balance("AVAILBAL");
+                        self.read_available_balance.set_with("AVAILBAL", check)?;
+                    }
+                    Some(key) => bail!("Unexpected key '{}' for state {:?}", key, self.state),
+                    None => self.state = ParserState::ReadStatementTransactionResponse,
+                },
+                ParserState::ReadTransactionList => match self.get_field("BANKTRANLIST")? {
+                    Some("DTSTART") => {let check = self.get_timestamp();self.read_start_date.set_with_value("DTSTART",  check)?},
+                    Some("DTEND") => {let check = self.get_timestamp();self.read_end_date.set_with_value("DTEND",  check)?},
+                    Some("STMTTRN") => self.state = ParserState::ReadTransaction,
+                    Some(key) => bail!("Unexpected key '{}' for state {:?}", key, self.state),
+                    None => self.state = ParserState::ReadStatementResponse,
+                },
+                ParserState::ReadTransaction => match self.get_field("STMTTRN")? {
+                    Some("TRNTYPE") => {let check = self.get_transaction_type();self.transaction_type.put_or_else("TRNTYPE", check)?},
+                    Some("DTPOSTED") => {let check = self.get_timestamp();self.date_posted.put_or_else("DTPOSTED", check)?},
+                    Some("DTUSER") => {let check = self.get_timestamp_naive();self.user_date.put_or_else("DTUSER", check)?},
+                    Some("TRNAMT") => {let check = self.get_decimal();self.amount.put_or_else("TRNAMT", check)?},
+                    Some("FITID") => {let check = self.get_value();self.transaction_id.put_or_else("FITID", check)?},
+                    Some("NAME") => {let check = self.get_value();self.name.put_or_else("NAME",  check)?},
+                    Some("CCACCTTO") => {let check =self.get_account_to(); self.account_to.put_or_else("CCACCTTO",  check)?},
+                    Some("MEMO") => {let check = self.get_value();self.memo.put_or_else("MEMO", check)?},
+                    Some(key) => bail!("Unexpected key '{}' for state {:?}", key, self.state),
+                    None => {
+                        let transaction = StatementTransaction {
+                            transaction_type: self.transaction_type.take().ok_or_eyre("Missing key 'TRNTYPE'")?,
+                            date_posted: self.date_posted.take().ok_or_eyre("Missing key 'DTPOSTED'")?,
+                            user_date: self.user_date.take(),
+                            amount: self.amount.take().ok_or_eyre("Missing key 'TRNAMT'")?,
+                            transaction_id: self.transaction_id.take().ok_or_eyre("Missing key 'FITID'")?,
+                            name: self.name.take().ok_or_eyre("Missing key 'NAME'")?,
+                            account_to: self.account_to.take(),
+                            memo: self.memo.take(),
+                        };
+
+                        self.state = ParserState::ReadTransactionList;
+                        return Ok(Some(transaction));
+                    },
+                }
+                ParserState::ReadClose => return Ok(None),
+            }
+        }
+    }
+
+    fn check_sign_on_message_response_v1(&mut self) -> Result<()> {
+        let mut sign_on_response = false;
+        loop {
+            match self.get_field("SIGNONMSGSRSV1")? {
+                Some("SONRS") => {
+                    sign_on_response.set_with("SONRS", self.check_sign_on_response())?
                 }
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
             }
         }
 
-        Ok(Document {
-            sign_on_message_response: sign_on_message_response
-                .ok_or_eyre("Missing key 'SIGNONMSGSRSV1'")?,
-            institution_message_response: institution_message_response
-                .ok_or_eyre("Missing key 'BANKMSGSRSV1' or 'CREDITCARDMSGSRSV1'")?,
-        })
+        sign_on_response.ensure_field("SIGNONMSGSRSV1")?;
+        Ok(())
     }
 
-    fn get_sign_on_message_response_v1(&mut self) -> Result<SignOnMessageResponseV1<'a>> {
-        let mut sign_on_response = None;
-        match self.get_key()? {
-            "SONRS" => sign_on_response.put_or_else("SONRS", || {
-                self.get_sign_on_response()
-                    .wrap_err("Failed to parse struct 'SONRS'")
-            })?,
-            key => bail!("Unexpected key '{}'", key),
-        }
-        self.expect_close("SIGNONMSGSRSV1")?;
-
-        Ok(SignOnMessageResponseV1 {
-            sign_on_response: sign_on_response.ok_or_eyre("Missing key 'SONRS'")?,
-        })
-    }
-
-    fn get_sign_on_response(&mut self) -> Result<SignOnResponse<'a>> {
-        let mut status = None;
-        let mut dtserver = None;
-        let mut language = None;
-        let mut last_profile_update = None;
-        let mut financial_institution = None;
-        let mut bank_id = None;
+    fn check_sign_on_response(&mut self) -> Result<()> {
+        let mut status = false;
+        let mut server_date = false;
+        let mut language = false;
+        let mut last_profile_update = false;
+        let mut financial_institution = false;
+        let mut bank_id = false;
         loop {
             match self.get_field("SONRS")? {
-                Some("STATUS") => status.put_or_else("STATUS", || {
-                    self.get_status()
-                        .wrap_err("Failed to parse struct 'STATUS'")
-                })?,
-                Some("DTSERVER") => dtserver.put_or_else("DTSERVER", || self.get_timestamp())?,
-                Some("LANGUAGE") => language.put_or_else("LANGUAGE", || self.get_value())?,
+                Some("STATUS") => status.set_with("STATUS", self.check_status())?,
+                Some("DTSERVER") => server_date.set_with_value("DTSERVER", self.get_timestamp())?,
+                Some("LANGUAGE") => language.set_with_value("LANGUAGE", self.get_value())?,
                 Some("DTPROFUP") => {
-                    last_profile_update.put_or_else("DTPROFUP", || self.get_timestamp())?
+                    last_profile_update.set_with_value("DTPROFUP", self.get_timestamp())?
                 }
-                Some("FI") => financial_institution.put_or_else("FI", || {
-                    self.get_financial_institution()
-                        .wrap_err("Failed to parse struct 'FI'")
-                })?,
-                Some("INTU.BID") => bank_id.put_or_else("INTU.BID", || self.get_u32())?,
+                Some("FI") => {
+                    financial_institution.set_with("FI", self.check_financial_institution())?
+                }
+                Some("INTU.BID") => bank_id.set_with_value("INTU.BID", self.get_u32())?,
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
             }
         }
 
-        Ok(SignOnResponse {
-            status: status.ok_or_eyre("Missing key 'STATUS'")?,
-            server_date: dtserver.ok_or_eyre("Missing key 'DTSERVER'")?,
-            language: language.ok_or_eyre("Missing key 'LANGUAGE'")?,
-            last_profile_update,
-            financial_institution: financial_institution.ok_or_eyre("Missing key 'FI'")?,
-            bank_id: bank_id.ok_or_eyre("Missing key 'INTU.BID'")?,
-        })
+        status.ensure_field("STATUS")?;
+        server_date.ensure_field("DTSERVER")?;
+        language.ensure_field("LANGUAGE")?;
+        // last_profile_update is optional
+        financial_institution.ensure_field("FI")?;
+        bank_id.ensure_field("INTU.BID")?;
+        Ok(())
     }
 
-    fn get_status(&mut self) -> Result<Status<'a>> {
-        let mut code = None;
-        let mut severity = None;
-        let mut message = None;
+    fn check_status(&mut self) -> Result<()> {
+        let mut code = false;
+        let mut severity = false;
+        let mut message = false;
         loop {
             match self.get_field("STATUS")? {
-                Some("CODE") => code.put_or_else("CODE", || self.get_u32())?,
-                Some("SEVERITY") => severity.put_or_else("SEVERITY", || self.get_severity())?,
-                Some("MESSAGE") => message.put_or_else("MESSAGE", || self.get_value())?,
+                Some("CODE") => code.set_with_value("CODE", self.get_u32())?,
+                Some("SEVERITY") => severity.set_with_value("SEVERITY", self.get_severity())?,
+                Some("MESSAGE") => message.set_with_value("MESSAGE", self.get_value())?,
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
             }
         }
 
-        Ok(Status {
-            code: code.ok_or_eyre("Missing key 'CODE'")?,
-            severity: severity.ok_or_eyre("Missing key 'SEVERITY'")?,
-            message,
-        })
+        code.ensure_field("CODE")?;
+        severity.ensure_field("SEVERITY")?;
+        // message is optional
+
+        Ok(())
     }
 
-    fn get_financial_institution(&mut self) -> Result<FinancialInstitution<'a>> {
-        let mut organization = None;
-        let mut institution_id = None;
+    fn check_financial_institution(&mut self) -> Result<()> {
+        let mut organization = false;
+        let mut institution_id = false;
         loop {
             match self.get_field("FI")? {
-                Some("ORG") => organization.put_or_else("ORG", || self.get_value())?,
-                Some("FID") => institution_id.put_or_else("FID", || self.get_u32())?,
+                Some("ORG") => organization.set_with_value("ORG", self.get_value())?,
+                Some("FID") => institution_id.set_with_value("FID", self.get_u32())?,
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
             }
         }
 
-        Ok(FinancialInstitution {
-            organization: organization.ok_or_eyre("Missing key 'ORG'")?,
-            institution_id: institution_id.ok_or_eyre("Missing key 'FID'")?,
-        })
+        organization.ensure_field("ORG")?;
+        institution_id.ensure_field("FID")?;
+        Ok(())
     }
 
-    fn get_msg_srs_v1(&mut self, struct_name: &str) -> Result<InstitutionMessageResponseV1<'a>> {
-        let mut statement_transaction_response = None;
+    fn check_account_from(&mut self, struct_name: &str) -> Result<()> {
+        let mut bank_id = false;
+        let mut account_number = false;
+        let mut account_type = false;
         loop {
             match self.get_field(struct_name)? {
-                Some("STMTTRNRS") => {
-                    statement_transaction_response.put_or_else("STMTTRNRS", || {
-                        self.get_statement_transaction_response("STMTTRNRS")
-                            .wrap_err("Failed to parse struct 'STMTTRNRS'")
-                    })?
-                }
-                Some("CCSTMTTRNRS") => {
-                    statement_transaction_response.put_or_else("CCSTMTTRNRS", || {
-                        self.get_statement_transaction_response("CCSTMTTRNRS")
-                            .wrap_err("Failed to parse struct 'CCSTMTTRNRS'")
-                    })?
-                }
-                Some(key) => bail!("Unexpected key '{}'", key),
-                None => break,
-            }
-        }
-
-        Ok(InstitutionMessageResponseV1 {
-            statement_transaction_response: statement_transaction_response
-                .ok_or_eyre("Missing key 'STMTTRNRS' or 'CCSTMTTRNRS'")?,
-        })
-    }
-
-    fn get_statement_transaction_response(
-        &mut self,
-        struct_name: &str,
-    ) -> Result<StatementTransactionResponse<'a>> {
-        let mut unique_id = None;
-        let mut status = None;
-        let mut statement_response = None;
-        loop {
-            match self.get_field(struct_name)? {
-                Some("TRNUID") => unique_id.put_or_else("TRNUID", || self.get_u32())?,
-                Some("STATUS") => status.put_or_else("STATUS", || {
-                    self.get_status()
-                        .wrap_err("Failed to parse struct 'STATUS'")
-                })?,
-                Some("STMTRS") if struct_name == "STMTTRNRS" => {
-                    statement_response.put_or_else("STMTRS", || {
-                        self.get_statement_response("STMTRS")
-                            .wrap_err("Failed to parse struct 'STMTRS'")
-                    })?
-                }
-                Some("CCSTMTRS") if struct_name == "CCSTMTTRNRS" => statement_response
-                    .put_or_else("CCSTMTRS", || {
-                        self.get_statement_response("CCSTMTRS")
-                            .wrap_err("Failed to parse struct 'CCSTMTRS'")
-                    })?,
-                Some(key) => bail!("Unexpected key '{}'", key),
-                None => break,
-            }
-        }
-
-        Ok(StatementTransactionResponse {
-            unique_id: unique_id.ok_or_eyre("Missing key 'TRNUID'")?,
-            status: status.ok_or_eyre("Missing key 'STATUS'")?,
-            statement_response: statement_response
-                .ok_or_eyre("Missing key 'STMTRS' or 'CCSTMTRS'")?,
-        })
-    }
-
-    fn get_statement_response(&mut self, struct_name: &str) -> Result<StatementResponse<'a>> {
-        let mut default_currency = None;
-        let mut bank_account_from = None;
-        let mut statement_transaction_data = None;
-        let mut ledger_balance = None;
-        let mut available_balance = None;
-        loop {
-            match self.get_field(struct_name)? {
-                Some("CURDEF") => default_currency.put_or_else("CURDEF", || self.get_currency())?,
-                Some("BANKACCTFROM") => bank_account_from.put_or_else("BANKACCTFROM", || {
-                    self.get_account_from("BANKACCTFROM")
-                        .wrap_err("Failed to parse struct 'BANKACCTFROM'")
-                })?,
-                Some("CCACCTFROM") => bank_account_from.put_or_else("CCACCTFROM", || {
-                    self.get_account_from("CCACCTFROM")
-                        .wrap_err("Failed to parse struct 'CCACCTFROM'")
-                })?,
-                Some("BANKTRANLIST") => {
-                    statement_transaction_data.put_or_else("BANKTRANLIST", || {
-                        self.get_statement_transaction_data()
-                            .wrap_err("Failed to parse struct 'BANKTRANLIST'")
-                    })?
-                }
-                Some("LEDGERBAL") => ledger_balance.put_or_else("LEDGERBAL", || {
-                    self.get_balance("LEDGERBAL")
-                        .wrap_err("Failed to parse struct 'LEDGERBAL'")
-                })?,
-                Some("AVAILBAL") => available_balance.put_or_else("AVAILBAL", || {
-                    self.get_balance("AVAILBAL")
-                        .wrap_err("Failed to parse struct 'AVAILBAL'")
-                })?,
-                Some(key) => bail!("Unexpected key '{}'", key),
-                None => break,
-            }
-        }
-
-        Ok(StatementResponse {
-            default_currency: default_currency.ok_or_eyre("Missing key 'CURDEF'")?,
-            bank_account_from: bank_account_from
-                .ok_or_eyre("Missing key 'BANKACCTFROM' or 'CCACCTFROM'")?,
-            statement_transaction_data: statement_transaction_data
-                .ok_or_eyre("Missing key 'BANKTRANLIST'")?,
-            ledger_balance: ledger_balance.ok_or_eyre("Missing key 'LEDGERBAL'")?,
-            available_balance: available_balance.ok_or_eyre("Missing key 'AVAILBAL'")?,
-        })
-    }
-
-    fn get_account_from(&mut self, struct_name: &str) -> Result<AccountFrom> {
-        let mut bank_id = None;
-        let mut account_number = None;
-        let mut account_type = None;
-        loop {
-            match self.get_field(struct_name)? {
-                Some("BANKID") => bank_id.put_or_else("BANKID", || self.get_u32())?,
-                Some("ACCTID") => account_number.put_or_else("ACCTID", || self.get_u32())?,
+                Some("BANKID") => bank_id.set_with_value("BANKID", self.get_u32())?,
+                Some("ACCTID") => account_number.set_with_value("ACCTID", self.get_u32())?,
                 Some("ACCTTYPE") => {
-                    account_type.put_or_else("ACCTTYPE", || self.get_account_type())?
+                    account_type.set_with_value("ACCTTYPE", self.get_account_type())?
                 }
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
             }
         }
 
-        Ok(AccountFrom {
-            bank_id,
-            account_number: account_number.ok_or_eyre("Missing key 'ACCTID'")?,
-            account_type,
-        })
+        account_number.ensure_field("ACCTID")?;
+        Ok(())
     }
 
-    fn get_statement_transaction_data(&mut self) -> Result<StatementTransactionData<'a>> {
-        let mut start_date = None;
-        let mut end_date = None;
-        let mut transactions = Vec::new();
-        loop {
-            match self.get_field("BANKTRANLIST")? {
-                Some("DTSTART") => start_date.put_or_else("DTSTART", || self.get_timestamp())?,
-                Some("DTEND") => end_date.put_or_else("DTEND", || self.get_timestamp())?,
-                Some("STMTTRN") => transactions.push(
-                    self.get_statement_transaction("STMTTRN")
-                        .wrap_err("Failed to parse struct 'STMTTRN'")?,
-                ),
-                Some(key) => bail!("Unexpected key '{}'", key),
-                None => break,
-            }
-        }
-
-        Ok(StatementTransactionData {
-            start_date: start_date.ok_or_eyre("Missing key 'DTSTART'")?,
-            end_date: end_date.ok_or_eyre("Missing key 'DTEND'")?,
-            transactions,
-        })
-    }
-
-    fn get_statement_transaction(&mut self, struct_name: &str) -> Result<StatementTransaction<'a>> {
-        let mut transaction_type = None;
-        let mut date_posted = None;
-        let mut user_date = None;
-        let mut amount = None;
-        let mut transaction_id = None;
-        let mut name = None;
-        let mut account_to = None;
-        let mut memo = None;
+    fn check_balance(&mut self, struct_name: &str) -> Result<()> {
+        let mut amount = false;
+        let mut timestamp = false;
         loop {
             match self.get_field(struct_name)? {
-                Some("TRNTYPE") => {
-                    transaction_type.put_or_else("TRNTYPE", || self.get_transaction_type())?
-                }
-                Some("DTPOSTED") => {
-                    date_posted.put_or_else("DTPOSTED", || self.get_timestamp_naive())?
-                }
-                Some("DTUSER") => user_date.put_or_else("DTUSER", || self.get_timestamp_naive())?,
-                Some("TRNAMT") => amount.put_or_else("TRNAMT", || self.get_decimal())?,
-                Some("FITID") => transaction_id.put_or_else("FITID", || self.get_value())?,
-                Some("NAME") => name.put_or_else("NAME", || self.get_value())?,
-                Some("CCACCTTO") => account_to.put_or_else("CCACCTTO", || {
-                    self.get_account_to()
-                        .wrap_err("Failed to parse struct 'CCACCTTO'")
-                })?,
-                Some("MEMO") => memo.put_or_else("MEMO", || self.get_value())?,
+                Some("BALAMT") => amount.set_with_value("BALAMT", self.get_decimal())?,
+                Some("DTASOF") => timestamp.set_with_value("DTASOF", self.get_timestamp())?,
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
             }
         }
 
-        Ok(StatementTransaction {
-            transaction_type: transaction_type.ok_or_eyre("Missing key 'TRNTYPE'")?,
-            date_posted: date_posted.ok_or_eyre("Missing key 'DTPOSTED'")?,
-            user_date,
-            amount: amount.ok_or_eyre("Missing key 'TRNAMT'")?,
-            transaction_id: transaction_id.ok_or_eyre("Missing key 'FITID'")?,
-            name: name.ok_or_eyre("Missing key 'NAME'")?,
-            account_to,
-            memo,
-        })
-    }
+        amount.ensure_field("BALAMT")?;
+        timestamp.ensure_field("DTASOF")?;
 
-    fn get_balance(&mut self, struct_name: &str) -> Result<Balance> {
-        let mut amount = None;
-        let mut timestamp = None;
-        loop {
-            match self.get_field(struct_name)? {
-                Some("BALAMT") => amount.put_or_else("BALAMT", || self.get_decimal())?,
-                Some("DTASOF") => timestamp.put_or_else("DTASOF", || self.get_timestamp())?,
-                Some(key) => bail!("Unexpected key '{}'", key),
-                None => break,
-            }
-        }
-
-        Ok(Balance {
-            amount: amount.ok_or_eyre("Missing key 'BALAMT'")?,
-            timestamp: timestamp.ok_or_eyre("Missing key 'DTASOF'")?,
-        })
+        Ok(())
     }
 
     fn get_account_to(&mut self) -> Result<AccountTo> {
         let mut account_id = None;
         loop {
             match self.get_field("CCACCTTO")? {
-                Some("ACCTID") => account_id.put_or_else("ACCTID", || self.get_u32())?,
+                Some("ACCTID") => account_id.put_or_else("ACCTID", self.get_u32())?,
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
             }
@@ -1116,15 +1077,6 @@ impl<'a> DocumentParser<'a> {
             Some(Ok(QfxToken::OpenKey(key))) => Ok(Some(key)),
             Some(Ok(QfxToken::CloseKey(k))) if k == struct_name => Ok(None),
             Some(Ok(v)) => Err(eyre!("Expected key, got: {:?}", v)),
-            Some(Err(e)) => Err(e),
-            None => Err(eyre!("Unexpected end of file")),
-        }
-    }
-
-    fn expect_close(&mut self, key: &str) -> Result<()> {
-        match self.tokens.next() {
-            Some(Ok(QfxToken::CloseKey(k))) if k == key => Ok(()),
-            Some(Ok(v)) => Err(eyre!("Expected close key '{}', got: {:?}", key, v)),
             Some(Err(e)) => Err(e),
             None => Err(eyre!("Unexpected end of file")),
         }
@@ -1202,9 +1154,9 @@ impl<'a> DocumentParser<'a> {
         }
     }
 
-    fn get_currency(&mut self) -> Result<Currency> {
+    fn check_currency(&mut self) -> Result<()> {
         match self.get_value() {
-            Ok("CAD") => Ok(Currency::Cad),
+            Ok("CAD") => Ok(()),
             Ok(v) => Err(eyre!("Unexpected currency: '{}'", v)),
             Err(e) => Err(e.wrap_err("Failed to parse currency")),
         }
@@ -1247,6 +1199,44 @@ impl<'a> DocumentParser<'a> {
                 self.local_timezone = Some(local_timezone);
                 local_timezone
             }
+        }
+    }
+}
+
+impl<'a> Iterator for DocumentParser<'a> {
+    type Item = Result<FileTransaction<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_transaction() {
+            Ok(Some(StatementTransaction {
+                transaction_type,
+                date_posted,
+                amount,
+                transaction_id,
+                name,
+                memo,
+                ..
+            })) => {
+                let file_transaction_type = match transaction_type {
+                    TransactionType::Debit => FileTransactionType::Debit,
+                    TransactionType::Credit => FileTransactionType::Credit,
+                    TransactionType::Pos => FileTransactionType::Pos,
+                    TransactionType::Atm => FileTransactionType::Atm,
+                    TransactionType::Fee => FileTransactionType::Fee,
+                    TransactionType::Other => FileTransactionType::Other,
+                };
+
+                Some(Ok(FileTransaction {
+                    transaction_type: file_transaction_type,
+                    date_posted,
+                    amount,
+                    transaction_id,
+                    name,
+                    memo,
+                }))
+            }
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
         }
     }
 }
