@@ -13,9 +13,41 @@ pub struct AccountConfig {
     pub source_path: PathBuf,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UserTransactionType {
+    DebitPurchase,
+    DebitRefund,
+    VisaDebitPurchase,
+    VisaDebitRefund,
+    SentEtransfer,
+    ReceivedEtransfer,
+    CancelledEtransfer,
+    SentDirectDeposit,
+    ReceivedDirectDeposit,
+    AtmWithdrawal,
+    AtmDeposit,
+    Interest,
+    BankFee,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub enum NameSource {
+    Memo,
+    Name,
+    NameSuffix,
+}
+
 #[derive(Debug, Deserialize)]
-pub struct TransactionRule {
-    pub priority: u8,
+pub struct TransactionTypeConfig {
+    pub transaction_type: UserTransactionType,
+    pub prefix: String,
+    pub name_source: NameSource,
+    pub accounts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionRuleConfig {
+    pub transaction_type: UserTransactionType,
     pub category: String,
     pub patterns: Vec<String>,
 }
@@ -23,7 +55,8 @@ pub struct TransactionRule {
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub account: Vec<AccountConfig>,
-    pub rule: Vec<TransactionRule>,
+    pub transaction_type: Vec<TransactionTypeConfig>,
+    pub rule: Vec<TransactionRuleConfig>,
 }
 
 impl AppConfig {

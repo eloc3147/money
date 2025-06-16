@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use color_eyre::{
     Result,
     eyre::{Context, eyre},
-    owo_colors::OwoColorize,
 };
 use console::{Emoji, style};
 use indicatif::MultiProgress;
@@ -35,8 +32,8 @@ fn main() -> Result<()> {
         style("[2/4]").bold().dim(),
         Emoji("⚙️ ", "")
     );
-    let categorizer =
-        Categorizer::build(config.rule, true).wrap_err("Failed to load transaction rules")?;
+    let categorizer = Categorizer::build(config.transaction_type, config.rule, true)
+        .wrap_err("Failed to load transaction rules")?;
 
     println!(
         "{} {}Loading transaction files...",
@@ -45,26 +42,69 @@ fn main() -> Result<()> {
     );
     let load_progress = MultiProgress::new();
 
-    let loader = Loader::new(config.account, categorizer);
-
-    let mut uncategorized = HashMap::new();
+    let mut loader = Loader::new(categorizer);
     loader
-        .load_accounts(&load_progress, &mut uncategorized)
+        .load(config.account, &load_progress)
         .wrap_err("Failed to load accounts")?;
 
-    drop(load_progress);
+    load_progress.clear()?;
 
-    println!("Most common uncategorized transactions:");
-    if uncategorized.len() > 0 {
-        let mut items = Vec::from_iter(uncategorized);
+    println!(
+        "{} {}Import complete",
+        style("[4/4]").bold().dim(),
+        Emoji("✅ ", ""),
+    );
+
+    let (missing_prefix, missing_rule) = loader.get_missing_stats();
+
+    if missing_prefix.len() > 0 {
+        let mut items = Vec::from_iter(missing_prefix);
         items.sort_by(|a, b| a.1.cmp(&b.1).reverse());
+        let count: usize = items.iter().map(|(_, c)| *c).sum();
 
-        for (name, count) in items.iter().take(20) {
+        println!(
+            "\n{} transactions missing prefixes",
+            style(count).bright().yellow()
+        );
+
+        println!("Most frequent transactions missing prefixes:");
+        for (info, count) in items.iter().take(20) {
             println!(
-                "{:50}: {}",
-                style(name).bright_yellow().bold(),
-                style(count).bright_cyan()
+                "{:22} | {:33}: {}",
+                style(&info.account).bright().white().bold(),
+                style(&info.name).bright().white().bold(),
+                style(count).bright().cyan()
             );
+        }
+        if items.len() > 20 {
+            println!("{}", style("...").bright().white());
+        }
+    }
+
+    if missing_rule.len() > 0 {
+        let mut items = Vec::from_iter(missing_rule);
+        items.sort_by(|a, b| a.1.cmp(&b.1).reverse());
+        let count: usize = items.iter().map(|(_, c)| *c).sum();
+
+        println!(
+            "\n{} transactions missing category rules",
+            style(count).bright().yellow()
+        );
+
+        println!("Most frequent transactions missing category rules:");
+        for (info, count) in items.iter().take(20) {
+            println!(
+                "{:28} | {:40}: {}",
+                style(&format!("{:?}", info.transaction_type))
+                    .bright()
+                    .white()
+                    .bold(),
+                style(&info.display).bright().white().bold(),
+                style(count).bright().cyan()
+            );
+        }
+        if items.len() > 20 {
+            println!("{}", style("...").bright().white());
         }
     }
 

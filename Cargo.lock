@@ -960,6 +960,7 @@ dependencies = [
  "dirs",
  "encoding_rs",
  "indicatif",
+ "patricia_tree",
  "regex",
  "rocket",
  "rust_decimal",
@@ -1086,6 +1087,15 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "patricia_tree"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edb45b6331bbdbb54c9a29413703e892ab94f83a31e4a546c778495a91e7fbca"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
