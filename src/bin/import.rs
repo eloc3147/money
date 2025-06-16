@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         style("[2/4]").bold().dim(),
         Emoji("⚙️ ", "")
     );
-    let categorizer = Categorizer::build(config.transaction_type, config.rule, true)
+    let categorizer = Categorizer::build(config.transaction_type, config.rule)
         .wrap_err("Failed to load transaction rules")?;
 
     println!(

@@ -1,8 +1,5 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
 
 use color_eyre::Result;
 use color_eyre::eyre::{OptionExt, bail};
@@ -30,11 +27,6 @@ pub struct MissingRuleInfo {
 }
 
 pub struct Categorizer {
-    test_mode: bool,
-    dbg_uc_log: File,
-    dbg_m_log: File,
-    dbg_c_log: File,
-
     accounts: HashMap<String, GenericPatriciaMap<String, TransactionDecoder>>,
     missing_prefix: HashMap<MissingRuleInfo, usize>,
     missing_rule: HashMap<MissingRuleInfo, usize>,
@@ -44,11 +36,7 @@ impl Categorizer {
     pub fn build(
         transaction_types: Vec<TransactionTypeConfig>,
         rules: Vec<TransactionRuleConfig>,
-        test_mode: bool,
     ) -> Result<Self> {
-        // 1st LUT: dict[str<account_name>, list[(prefix, parser)]]
-        // 2nd LUT: list[(pattern, category)]
-
         let mut type_categories: HashMap<UserTransactionType, HashMap<String, String>> =
             HashMap::new();
         for rule in rules {
@@ -99,10 +87,6 @@ impl Categorizer {
         }
 
         Ok(Self {
-            test_mode,
-            dbg_uc_log: File::create(&PathBuf::from("uncategorized.log")).unwrap(),
-            dbg_m_log: File::create(&PathBuf::from("med_categorized.log")).unwrap(),
-            dbg_c_log: File::create(&PathBuf::from("categorized.log")).unwrap(),
             accounts,
             missing_prefix: HashMap::new(),
             missing_rule: HashMap::new(),
@@ -133,15 +117,6 @@ impl Categorizer {
                 .or_default();
 
             *count += 1;
-
-            write!(
-                &mut self.dbg_uc_log,
-                "{:40} | {:50}\n",
-                name,
-                memo.unwrap_or_default()
-            )
-            .unwrap();
-
             return Ok(None);
         };
 
@@ -155,17 +130,6 @@ impl Categorizer {
                 .strip_prefix(prefix)
                 .ok_or_eyre("Name does not contain selected prefix")?,
         };
-
-        let tn = format!("{:?}", decoder.transaction_type);
-        write!(
-            &mut self.dbg_m_log,
-            "{:20} | {:40} | {:40} | {:50}\n",
-            tn,
-            display_name,
-            name,
-            memo.unwrap_or_default()
-        )
-        .unwrap();
 
         let Some(category) = decoder.categories.get(display_name) else {
             let count = self
@@ -183,16 +147,6 @@ impl Categorizer {
             *count += 1;
             return Ok(None);
         };
-
-        write!(
-            &mut self.dbg_c_log,
-            "{:20} | {:40} | {:40} | {:50}\n",
-            category,
-            display_name,
-            name,
-            memo.unwrap_or_default()
-        )
-        .unwrap();
 
         Ok(Some(category))
     }

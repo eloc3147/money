@@ -1,20 +1,14 @@
 use chrono::{DateTime, FixedOffset};
-use color_eyre::{
-    Result,
-    eyre::{Context, bail, eyre},
-};
+use color_eyre::Result;
+use color_eyre::eyre::{Context, bail, eyre};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rust_decimal::Decimal;
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::collections::HashMap;
+use std::path::Path;
 
 use crate::importer::categorizer::{Categorizer, MissingRuleInfo};
-
-use super::{config::AccountConfig, qfx};
+use crate::importer::config::AccountConfig;
+use crate::importer::qfx;
 
 /// Transaction type as defined by the input file
 #[derive(Debug)]
