@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use color_eyre::{
     Result,
     eyre::{Context, eyre},
@@ -7,11 +9,12 @@ use indicatif::MultiProgress;
 use money::importer::categorizer::Categorizer;
 use money::importer::config::AppConfig;
 use money::importer::loader::Loader;
+use tokio::runtime::Builder;
+use warp::Filter;
+use warp::http::StatusCode;
 
-fn main() -> Result<()> {
+fn load_data() -> Result<()> {
     color_eyre::install()?;
-
-    println!("{}", style("Money Importer").white());
 
     let data_dir = dirs::data_dir()
         .ok_or_else(|| eyre!("OS user data directory missing"))?
@@ -107,6 +110,40 @@ fn main() -> Result<()> {
             println!("{}", style("...").bright().white());
         }
     }
+
+    Ok(())
+}
+
+async fn run_server() {
+    let assets = warp::path("assets").and(warp::fs::dir("web/assets"));
+    let home = warp::path::end().and(warp::fs::file("web/index.html"));
+    let missing = warp::any()
+        .map(warp::reply)
+        .map(|r| warp::reply::with_status(r, StatusCode::NOT_FOUND));
+
+    let routes = home.or(assets).or(missing);
+
+    println!(
+        "Starting server at {}",
+        style("http://127.0.0.1:3030").bold().bright().blue()
+    );
+    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+}
+
+fn main() -> Result<()> {
+    println!("{}", style("Money").white());
+
+    load_data()?;
+
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_name("money-web")
+        .enable_all()
+        .build()
+        .wrap_err("Failed to launch tokio runtime")?;
+
+    runtime.block_on(run_server());
+    runtime.shutdown_timeout(Duration::from_secs(3));
 
     Ok(())
 }

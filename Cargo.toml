@@ -4,12 +4,6 @@ edition = "2024"
 name = "money"
 version = "0.2.1"
 
-[[bin]]
-name = "serve"
-
-[[bin]]
-name = "import"
-
 [dependencies]
 # Error handling
 color-eyre = "0.6.3"
@@ -31,6 +25,10 @@ self_cell = "1.2.0"
 regex = "1.11.1"
 patricia_tree = "0.9.0"
 
+# Web Server
+tokio = { version = "1.45.1", features = ["rt"] }
+warp = "0.3.7"
+
 # Old
 anyhow = "1.0"
 async-mutex = "1.4.0"
@@ -41,4 +39,3 @@ base64 = "0.21.0"
 bincode = "1.3.3"
 csv-async = { version = "1.1", default-features = false, features = ["tokio"] }
 rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
-tokio = { version = "1.23.0", features = ["rt"] }
