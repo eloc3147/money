@@ -1,21 +1,57 @@
 "use strict";
 
 const rd = await import("https://cdn.jsdelivr.net/npm/redom@4.3.0/+esm");
-const d3 = await import("https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm");
+
+const PALATE = [
+    // "#c52f21", // red;
+    "#d92662", // pink;
+    // "#c1208b", // fuchsia;
+    "#9236a4", // purple;
+    // "#7540bf", // violet;
+    "#524ed2", // indigo;
+    // "#2060df", // blue;
+    "#0172ad", // azure;
+    // "#047878", // cyan;
+    "#007a50", // jade;
+    // "#398712", // green;
+    "#a5d601", // lime;
+    // "#f2df0d", // yellow;
+    "#ffbf00", // amber;
+    "#ff9500", // pumpkin;
+    // "#d24317", // orange;
+    // "#ccc6b4", // sand;
+    "#ababab", // grey;
+    // "#646b79", // zinc;
+    "#525f7a", // slate;
+];
+
 
 export class Plot {
     constructor() {
-        this.el = rd.el("div", [
-            rd.el("h3", "Plot zone"),
-            this.plot = rd.el("div.plot"),
-        ]);
+        this.d3 = null;
+        this.drawn = false;
+        this.el = rd.el("div", { "aria-busy": true });
     }
 
     async onmount() {
-        rd.setChildren(this.plot, await this.draw());
+        await this.update_plot();
     }
 
+    async update_plot() {
+        if (!this.drawn) {
+            rd.setChildren(this.el, await this.draw());
+            this.el.removeAttribute("aria-busy");
+        }
+    }
+
+    // TODO: Style plot
     async draw() {
+        if (this.d3 == null) {
+            this.d3 = await import("https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm");
+        }
+
+        let d3 = this.d3;
+
         const margin = { top: 60, right: 230, bottom: 50, left: 50 },
             width = 1920 - margin.left - margin.right,
             height = 720 - margin.top - margin.bottom;
@@ -38,7 +74,7 @@ export class Plot {
         const keys = data.columns.slice(1);
 
         // color palette
-        const color = d3.scaleOrdinal().domain(keys).range(d3.schemeSet2);
+        const color = d3.scaleOrdinal().domain(keys).range(PALATE);
 
         //stack the data
         const stackedData = d3.stack().keys(keys)(data);
