@@ -30,6 +30,25 @@ export class Plot {
     constructor() {
         this.d3 = null;
         this.drawn = false;
+
+        this.container_width = 1920;
+        this.container_height = 720;
+        this.margin = { top: 60, right: 160, bottom: 50, left: 50 };
+        this.width = this.container_width - this.margin.left - this.margin.right;
+        this.height = this.container_height - this.margin.top - this.margin.bottom;
+
+        this.data = null;
+        this.stacked_data = null;
+        this.max_height = 0;
+        this.color_map = null;
+
+        this.idle_timeout = null;
+        this.selector = null;
+        this.x = null;
+        this.x_axis = null;
+        this.area_container = null;
+        this.area = null;
+
         this.el = rd.el("div", { "aria-busy": true });
     }
 
@@ -38,187 +57,220 @@ export class Plot {
     }
 
     async update_plot() {
-        if (!this.drawn) {
-            rd.setChildren(this.el, await this.draw());
-            this.el.removeAttribute("aria-busy");
+        if (this.drawn) {
+            return;
+        }
+
+        let [_, loaded_data] = await Promise.all([
+            this.import_d3(),
+            this.load_data()
+        ]);
+
+        if (loaded_data) {
+            // Requires both data and d3
+            this.process_data();
+        }
+
+        rd.setChildren(this.el, await this.draw());
+        this.el.removeAttribute("aria-busy");
+    }
+
+    async import_d3() {
+        if (this.d3 != null) {
+            return;
+        }
+
+        this.d3 = await import("https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm");
+    }
+
+    async load_data() {
+        if (this.data != null) {
+            return false;
+        }
+
+        const resp = await fetch("/api/test_data");
+        if (!resp.ok) {
+            throw new Error(`Loading data failed with code: ${resp.status}`);
+        }
+
+        this.data = await resp.json();
+        return true;
+    }
+
+    process_data() {
+        this.stacked_data = this.d3.stack().keys(Array(this.data.keys.length).keys())(this.data.rows);
+        this.max_height = 0;
+        for (const row of this.stacked_data) {
+            for (const cell of row) {
+                this.max_height = Math.max(this.max_height, cell[1]);
+            }
+        }
+
+        if (this.data.keys.length > PALATE.length) {
+            throw new Error(`Fewer color palate options (${PALATE.length}) than data keys (${this.data.keys.length})`);
+        }
+
+        this.color_map = new Map();
+        for (let i = 0; i < this.data.keys.length; i++) {
+            this.color_map.set(i, PALATE[i]);
         }
     }
 
     // TODO: Style plot
     async draw() {
-        if (this.d3 == null) {
-            this.d3 = await import("https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm");
-        }
+        const d3 = this.d3;
 
-        let d3 = this.d3;
-
-        const margin = { top: 60, right: 230, bottom: 50, left: 50 },
-            width = 1920 - margin.left - margin.right,
-            height = 720 - margin.top - margin.bottom;
-
-        // append the svg object to the body of the page
+        // Main Container
         const svg = d3.create("svg")
-            .attr("viewBox", `0, 0, 1920, 720`)
+            .attr("viewBox", `-20, -40, ${this.container_width}, ${this.container_height}`)
             .attr("preserveAspectRatio", "xMidYMid meet");
 
+        // Axis
+
+        // Create scaling functions
+        this.x = d3.scaleLinear()
+            .domain([0, this.data.rows.length - 1])
+            .range([0, this.width]);
+
+        const y = d3.scaleLinear()
+            .domain([0, this.max_height])
+            .range([this.height, 0]);
+
+        // Append axis ticks
+        this.x_axis = svg.append("g")
+            .attr("transform", `translate(0, ${this.height})`)
+            .call(d3.axisBottom(this.x).ticks(10));
+
         svg.append("g")
-            .attr("transform",
-                `translate(${margin.left}, ${margin.top})`);
+            .call(d3.axisLeft(y).ticks(5));
 
-        // Parse the Data
-        let data = await d3.csv("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/5_OneCatSevNumOrdered_wide.csv");
-
-        // GENERAL
-
-        // List of groups = header of the csv files
-        const keys = data.columns.slice(1);
-
-        // color palette
-        const color = d3.scaleOrdinal().domain(keys).range(PALATE);
-
-        //stack the data
-        const stackedData = d3.stack().keys(keys)(data);
-
-        // AXIS
-
-        // Add X axis
-        const x = d3.scaleLinear()
-            .domain(d3.extent(data, function (d) { return d.year; }))
-            .range([0, width]);
-        const xAxis = svg.append("g")
-            .attr("transform", `translate(0, ${height})`)
-            .call(d3.axisBottom(x).ticks(5))
-
-        // Add X axis label:
+        // Append axis labels
         svg.append("text")
             .attr("text-anchor", "end")
-            .attr("x", width)
-            .attr("y", height + 40)
-            .text("Time (year)");
+            .attr("x", this.width)
+            .attr("y", this.height + 40)
+            .text("TODO: X Value");
 
-        // Add Y axis label:
         svg.append("text")
             .attr("text-anchor", "end")
             .attr("x", 0)
             .attr("y", -20)
-            .text("# of baby born")
-            .attr("text-anchor", "start")
+            .text("TODO: Y Value")
+            .attr("text-anchor", "start");
 
-        // Add Y axis
-        const y = d3.scaleLinear()
-            .domain([0, 200000])
-            .range([height, 0]);
-        svg.append("g")
-            .call(d3.axisLeft(y).ticks(5))
+        // Chart area
 
-        // BRUSHING AND CHART
-
-        // Add a clipPath: everything out of this area won't be drawn.
-        const clip = svg.append("defs").append("svg:clipPath")
+        // Clipping area to allow selecting a subset of data
+        const clip = svg.append("defs")
+            .append("clipPath")
             .attr("id", "clip")
-            .append("svg:rect")
-            .attr("width", width)
-            .attr("height", height)
+            .append("rect")
+            .attr("width", this.width)
+            .attr("height", this.height)
             .attr("x", 0)
             .attr("y", 0);
 
-        // Add brushing
-        const brush = d3.brushX()  // Add the brush feature using the d3.brush function
-            .extent([[0, 0], [width, height]]) // initialise the brush area: start at 0,0 and finishes at width,height: it means I select the whole graph area
-            .on("end", updateChart) // Each time the brush selection changes, trigger the 'updateChart' function
-
-        // Create the scatter variable: where both the circles and the brush take place
-        const areaChart = svg.append('g')
-            .attr("clip-path", "url(#clip)")
+        // Area container
+        this.area_container = svg.append('g')
+            .attr("clip-path", "url(#clip)");
 
         // Area generator
-        const area = d3.area()
-            .x(function (d) { return x(d.data.year); })
-            .y0(function (d) { return y(d[0]); })
-            .y1(function (d) { return y(d[1]); })
+        this.area = d3.area()
+            .x((d, i) => this.x(i))
+            .y0((d) => y(d[0]))
+            .y1((d) => y(d[1]));
 
-        // Show the areas
-        areaChart
-            .selectAll("mylayers")
-            .data(stackedData)
+        // Add the data to the chart
+        this.area_container
+            .selectAll("none")
+            .data(this.stacked_data)
             .join("path")
-            .attr("class", function (d) { return "myArea " + d.key })
-            .style("fill", function (d) { return color(d.key); })
-            .attr("d", area)
+            .attr("class", (d) => "areaTrace trace" + d.key)
+            .style("fill", ((d) => this.color_map.get(d.key)).bind(this))
+            .attr("d", this.area);
 
-        // Add the brushing
-        areaChart
+        // Selection box
+        this.selector = d3.brushX()
+            .extent([[0, 0], [this.width, this.height]])
+            .on("end", this.select_chart_section.bind(this));
+
+        // Append the selection box
+        this.area_container
             .append("g")
             .attr("class", "brush")
-            .call(brush);
+            .call(this.selector);
 
-        let idleTimeout;
-        function idled() { idleTimeout = null; }
+        // Legend
 
-        // A function that update the chart for given boundaries
-        function updateChart(event, d) {
-            const extent = event.selection
-
-            // If no selection, back to initial coordinate. Otherwise, update X axis domain
-            if (!extent) {
-                if (!idleTimeout) return idleTimeout = setTimeout(idled, 350); // This allows to wait a little bit
-                x.domain(d3.extent(data, function (d) { return d.year; }))
-            } else {
-                x.domain([x.invert(extent[0]), x.invert(extent[1])])
-                areaChart.select(".brush").call(brush.move, null) // This remove the grey brush area as soon as the selection has been done
-            }
-
-            // Update axis and area position
-            xAxis.transition().duration(1000).call(d3.axisBottom(x).ticks(5))
-            areaChart
-                .selectAll("path")
-                .transition().duration(1000)
-                .attr("d", area)
-        }
-
-        // HIGHLIGHT GROUP
-
-        // What to do when one group is hovered
-        const highlight = function (event, d) {
-            // reduce opacity of all groups
-            d3.selectAll(".myArea").style("opacity", .1)
-            // expect the one that is hovered
-            d3.select("." + d).style("opacity", 1)
-        }
-
-        // And when it is not hovered anymore
-        const noHighlight = function (event, d) {
-            d3.selectAll(".myArea").style("opacity", 1)
-        }
-
-        // LEGEND
-
-        // Add one dot in the legend for each name.
-        const size = 20
-        svg.selectAll("myrect")
-            .data(keys)
+        // Add one square in the legend for each name.
+        const item_size = 20
+        svg.selectAll("none")
+            .data([...Array(this.data.keys.length).keys()].toReversed())
             .join("rect")
-            .attr("x", 400)
-            .attr("y", function (d, i) { return 10 + i * (size + 5) }) // 100 is where the first dot appears. 25 is the distance between dots
-            .attr("width", size)
-            .attr("height", size)
-            .style("fill", function (d) { return color(d) })
-            .on("mouseover", highlight)
-            .on("mouseleave", noHighlight)
+            .attr("x", this.width + 20)
+            .attr("y", (d, i) => 10 + i * (item_size + 5))
+            .attr("width", item_size)
+            .attr("height", item_size)
+            .style("fill", ((d) => this.color_map.get(d)).bind(this))
+            .on("mouseover", this.highlight.bind(this))
+            .on("mouseleave", this.unhighlight.bind(this));
 
         // Add one dot in the legend for each name.
-        svg.selectAll("mylabels")
-            .data(keys)
+        svg.selectAll("none")
+            .data(this.data.keys.reverse())
             .join("text")
-            .attr("x", 400 + size * 1.2)
-            .attr("y", function (d, i) { return 10 + i * (size + 5) + (size / 2) }) // 100 is where the first dot appears. 25 is the distance between dots
-            .style("fill", function (d) { return color(d) })
-            .text(function (d) { return d })
+            .attr("x", this.width + 20 + item_size * 1.2)
+            .attr("y", (d, i) => 10 + i * (item_size + 5) + 17)
+            .style("fill", ((d, i) => this.color_map.get(this.data.keys.length - i - 1)).bind(this))
+            .text((d) => d)
             .attr("text-anchor", "left")
-            .style("alignment-baseline", "middle")
-            .on("mouseover", highlight)
-            .on("mouseleave", noHighlight)
+            .style("font-size", "20px")
+            .on("mouseover", this.highlight.bind(this))
+            .on("mouseleave", this.unhighlight.bind(this));
 
         return svg.node();
+    }
+
+    highlight(event, d) {
+        // Reduce opacity of all groups
+        this.d3.selectAll(".areaTrace").style("opacity", .1);
+
+        // Expect the one that is hovered
+        this.d3.select(".trace" + d).style("opacity", 1);
+    }
+
+    unhighlight(event, d) {
+        this.d3.selectAll(".areaTrace").style("opacity", 1);
+    }
+
+    reset_timeout(plot) {
+        this.idle_timeout = null;
+    }
+
+    select_chart_section(event, d) {
+        const extent = event.selection;
+
+        // If no selection, back to initial coordinate. Otherwise, update X axis domain
+        if (!extent) {
+            // This allows to wait a little bit
+            if (!this.idle_timeout) {
+                this.idle_timeout = setTimeout(this.reset_timeout.bind(this), 350);
+                return;
+            }
+
+            this.x.domain([0, this.data.rows.length - 1]);
+        } else {
+            this.x.domain([this.x.invert(extent[0]), this.x.invert(extent[1])]);
+
+            // This remove the grey brush area as soon as the selection has been done
+            this.area_container.select(".brush").call(this.selector.move, null);
+        }
+
+        // Update axis and area position
+        this.x_axis.transition().duration(1000).call(this.d3.axisBottom(this.x).ticks(5))
+        this.area_container
+            .selectAll("path")
+            .transition().duration(1000)
+            .attr("d", this.area);
     }
 }
