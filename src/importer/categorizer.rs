@@ -26,8 +26,13 @@ pub struct MissingRuleInfo {
     pub memo: String,
 }
 
+#[derive(Debug, Default)]
+struct AccountRules {
+    prefixes: GenericPatriciaMap<String, TransactionDecoder>,
+}
+
 pub struct Categorizer {
-    accounts: HashMap<String, GenericPatriciaMap<String, TransactionDecoder>>,
+    accounts: HashMap<String, AccountRules>,
     missing_prefix: HashMap<MissingRuleInfo, usize>,
     missing_rule: HashMap<MissingRuleInfo, usize>,
 }
@@ -73,10 +78,12 @@ impl Categorizer {
             };
 
             for account in type_config.accounts {
-                let entry: &mut GenericPatriciaMap<String, TransactionDecoder> =
-                    accounts.entry(account).or_default();
+                let account_rules: &mut AccountRules = accounts.entry(account).or_default();
 
-                let existing = entry.insert(type_config.prefix.clone(), decoder.clone());
+                let existing = account_rules
+                    .prefixes
+                    .insert(type_config.prefix.clone(), decoder.clone());
+
                 if existing.is_some() {
                     bail!(
                         "Multiple transaction types use the prefix \"{}\"",
@@ -99,11 +106,11 @@ impl Categorizer {
         name: &str,
         memo: Option<&str>,
     ) -> Result<Option<&str>> {
-        let Some(prefixes) = self.accounts.get(account) else {
+        let Some(account_rules) = self.accounts.get(account) else {
             return Ok(None);
         };
 
-        let Some((prefix, decoder)) = prefixes.get_longest_common_prefix(name) else {
+        let Some((prefix, decoder)) = account_rules.prefixes.get_longest_common_prefix(name) else {
             let count = self
                 .missing_prefix
                 .entry(MissingRuleInfo {

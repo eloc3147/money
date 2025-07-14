@@ -125,9 +125,10 @@ impl Loader {
                 continue;
             }
 
-            let category =
-                self.categorizer
-                    .categorize(account, &transaction.name, transaction.memo)?;
+            let category = self
+                .categorizer
+                .categorize(account, &transaction.name, transaction.memo)?
+                .unwrap_or("Uncategorized");
         }
 
         Ok(())
