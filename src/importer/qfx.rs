@@ -14,10 +14,10 @@ use color_eyre::{
     eyre::{Context, OptionExt, bail, eyre},
 };
 use encoding_rs::WINDOWS_1252;
-use rust_decimal::Decimal;
 use self_cell::self_cell;
 
-use super::loader::{FileTransaction, FileTransactionType, TransactionReader};
+use super::loader::TransactionReader;
+use crate::data::{FileTransaction, FileTransactionType};
 
 #[derive(Debug)]
 struct DecodedContents<'a>(pub Cow<'a, str>);
@@ -38,7 +38,7 @@ pub struct QfxReader {
     is_xml: bool,
 }
 
-impl QfxReader {
+impl<'a> QfxReader {
     pub fn open(path: &Path) -> Result<Self> {
         let mut reader = BufReader::new(File::open(path).wrap_err("Failed to open file")?);
 
@@ -101,10 +101,8 @@ impl QfxReader {
 
         Ok(Self { contents, is_xml })
     }
-}
 
-impl<'a> TransactionReader<'a> for QfxReader {
-    fn read(&'a self) -> Result<impl Iterator<Item = Result<FileTransaction<'a>>>> {
+    pub fn read(&'a self) -> Result<impl Iterator<Item = Result<FileTransaction<'a>>>> {
         let lexer = Lexer::new(self.contents.borrow_dependent(), self.is_xml);
         Ok(DocumentParser::new(lexer))
     }
@@ -685,7 +683,7 @@ pub struct StatementTransaction<'a> {
     transaction_type: TransactionType,
     date_posted: DateTime<FixedOffset>,
     user_date: Option<NaiveDateTime>,
-    amount: Decimal,
+    amount: f64,
     transaction_id: &'a str,
     name: &'a str,
     account_to: Option<AccountTo>,
@@ -745,7 +743,7 @@ struct DocumentParser<'a> {
     transaction_type: Option<TransactionType>,
     date_posted: Option<DateTime<FixedOffset>>,
     user_date: Option<NaiveDateTime>,
-    amount: Option<Decimal>,
+    amount: Option<f64>,
     transaction_id: Option<&'a str>,
     name: Option<&'a str>,
     account_to: Option<AccountTo>,
@@ -896,7 +894,7 @@ impl<'a> DocumentParser<'a> {
                     Some("TRNTYPE") => {let check = self.get_transaction_type();self.transaction_type.put_or_else("TRNTYPE", check)?},
                     Some("DTPOSTED") => {let check = self.get_timestamp();self.date_posted.put_or_else("DTPOSTED", check)?},
                     Some("DTUSER") => {let check = self.get_timestamp_naive();self.user_date.put_or_else("DTUSER", check)?},
-                    Some("TRNAMT") => {let check = self.get_decimal();self.amount.put_or_else("TRNAMT", check)?},
+                    Some("TRNAMT") => {let check = self.get_float();self.amount.put_or_else("TRNAMT", check)?},
                     Some("FITID") => {let check = self.get_value();self.transaction_id.put_or_else("FITID", check)?},
                     Some("NAME") => {let check = self.get_value();self.name.put_or_else("NAME",  check)?},
                     Some("CCACCTTO") => {let check =self.get_account_to(); self.account_to.put_or_else("CCACCTTO",  check)?},
@@ -1035,7 +1033,7 @@ impl<'a> DocumentParser<'a> {
         let mut timestamp = false;
         loop {
             match self.get_field(struct_name)? {
-                Some("BALAMT") => amount.set_with_value("BALAMT", self.get_decimal())?,
+                Some("BALAMT") => amount.set_with_value("BALAMT", self.get_float())?,
                 Some("DTASOF") => timestamp.set_with_value("DTASOF", self.get_timestamp())?,
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
@@ -1097,8 +1095,10 @@ impl<'a> DocumentParser<'a> {
             .wrap_err("Failed to parse u32 value")
     }
 
-    fn get_decimal(&mut self) -> Result<Decimal> {
-        Decimal::from_str(self.get_value()?).wrap_err("Failed to parse decimal value")
+    fn get_float(&mut self) -> Result<f64> {
+        self.get_value()?
+            .parse()
+            .wrap_err("Failed to parse float value")
     }
 
     fn get_timestamp(&mut self) -> Result<DateTime<FixedOffset>> {

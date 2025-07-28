@@ -1,7 +1,8 @@
+mod data;
 mod importer;
 mod server;
 
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use color_eyre::{
     Result,
@@ -37,7 +38,7 @@ fn load_data() -> Result<()> {
         style("[2/4]").bold().dim(),
         Emoji("⚙️ ", "")
     );
-    let categorizer = Categorizer::build(config.transaction_type, config.rule)
+    let mut categorizer = Categorizer::build(config.transaction_type, config.rule)
         .wrap_err("Failed to load transaction rules")?;
 
     println!(
@@ -45,12 +46,11 @@ fn load_data() -> Result<()> {
         style("[3/4]").bold().dim(),
         Emoji("🏦 ", ""),
     );
-    let load_progress = MultiProgress::new();
+    let mut load_progress = MultiProgress::new();
+    let data = importer::import_data(&mut categorizer, &config.account, &mut load_progress)
+        .wrap_err("Failed to load transactions")?;
 
-    let mut loader = Loader::new(categorizer);
-    loader
-        .load(config.account, &load_progress)
-        .wrap_err("Failed to load accounts")?;
+    data.dump_to_file(&PathBuf::from("X:/Code/money/dmp.sqlite"))?;
 
     load_progress.clear()?;
 
@@ -60,7 +60,7 @@ fn load_data() -> Result<()> {
         Emoji("✅ ", ""),
     );
 
-    let (missing_prefix, missing_rule) = loader.get_missing_stats();
+    let (missing_prefix, missing_rule) = categorizer.get_missing_stats();
 
     if missing_prefix.len() > 0 {
         let mut items = Vec::from_iter(missing_prefix);
