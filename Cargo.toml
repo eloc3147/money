@@ -21,13 +21,22 @@ serde = { version = "1.0", features = ["derive"] }
 encoding_rs = "0.8.35"
 chrono = "0.4.40"
 self_cell = "1.2.0"
-regex = "1.11.1"
 patricia_tree = "0.9.0"
 
 # Data store
-rusqlite = { version = "0.37.0", features = ["bundled", "chrono", "backup"] }
+sqlx = { version = "=0.8.6", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+] }
+libsqlite3-sys = "=0.30.1"
 num_enum = "0.7.4"
 
 # Web Server
-tokio = { version = "1.45.1", features = ["rt-multi-thread"] }
-warp = "0.3.7"
+axum = { version = "0.8.4", default-features = false, features = [
+    "json",
+    "tokio",
+    "http1",
+] }
+tower-http = { version = "0.6", features = ["fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+futures = "0.3"

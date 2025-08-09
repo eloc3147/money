@@ -32,7 +32,7 @@ class PageContents {
 
     async select_plot() {
         if (this.plot == null) {
-            this.plot = await import("/assets/js/plot.js");
+            this.plot = await import("/js/plot.js");
         }
 
         rd.setChildren(this.el, new this.plot.Plot());

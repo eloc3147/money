@@ -4,37 +4,61 @@ pub mod loader;
 pub mod categorizer;
 mod qfx;
 
-use crate::data::DataStore;
-
 use categorizer::Categorizer;
+use chrono::{Days, NaiveDate};
 use color_eyre::eyre::{Context, Result, eyre};
 use config::AccountConfig;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use loader::Loader;
+use num_enum::IntoPrimitive;
 
-pub fn import_data(
+use crate::db::DbConnection;
+
+#[derive(Debug, IntoPrimitive)]
+#[repr(u8)]
+pub enum TransactionType {
+    Debit,
+    Credit,
+    Pos,
+    Atm,
+    Fee,
+    Other,
+}
+
+#[derive(Debug)]
+pub struct Transaction<'a> {
+    pub transaction_type: TransactionType,
+    pub date_posted: NaiveDate,
+    pub amount: f64,
+    pub transaction_id: &'a str,
+    pub name: &'a str,
+    pub memo: Option<&'a str>,
+}
+
+pub async fn import_data(
     categorizer: &mut Categorizer,
+    conn: &mut DbConnection,
     accounts: &[AccountConfig],
     progress: &MultiProgress,
-) -> Result<DataStore> {
+) -> Result<()> {
     let mut loader = Loader::new();
 
     let spinner = progress.add(ProgressBar::no_length());
     spinner.set_style(ProgressStyle::default_spinner());
     spinner.tick();
 
-    let mut data = DataStore::new().wrap_err("Failed to create data store")?;
+    for category in categorizer.categories() {
+        conn.add_category(category).await?;
+    }
 
+    let mut first_date = NaiveDate::MAX;
+    let mut last_date = NaiveDate::MIN;
     for account in accounts {
         spinner.set_message(format!("Loading account {}", account.name));
         spinner.tick();
 
-        let account_id = data
-            .add_account(&account.name)
-            .wrap_err("Failed to add account to data store")?;
-        let mut insert_handle = data
-            .build_batch_insert_handle()
-            .wrap_err("Failed to create batch insert handle")?;
+        // Get account ID
+        let account_id = conn.add_account(account.name.clone()).await?;
 
         let account_spinner = progress.add(ProgressBar::no_length());
         account_spinner.set_style(ProgressStyle::default_spinner());
@@ -79,21 +103,34 @@ pub fn import_data(
                     .categorize(&account.name, &transaction.name, transaction.memo)?
                     .unwrap_or("Uncategorized");
 
-                insert_handle
-                    .add_transaction(
-                        account_id,
-                        category,
-                        transaction.transaction_type,
-                        transaction.date_posted,
-                        transaction.amount,
-                        transaction.transaction_id,
-                        transaction.name,
-                        transaction.memo,
-                    )
-                    .wrap_err("Failed to add transaction")?;
+                if transaction.date_posted < first_date {
+                    first_date = transaction.date_posted;
+                }
+
+                if transaction.date_posted > last_date {
+                    last_date = transaction.date_posted;
+                }
+
+                conn.add_transaction(
+                    account_id,
+                    category,
+                    transaction.transaction_type,
+                    transaction.date_posted,
+                    transaction.amount,
+                    transaction.transaction_id,
+                    transaction.name,
+                    transaction.memo,
+                )
+                .await?;
             }
         }
     }
 
-    Ok(data)
+    let mut add_date = first_date;
+    while add_date <= last_date {
+        conn.add_date(add_date).await?;
+        add_date = add_date + Days::new(1);
+    }
+
+    Ok(())
 }

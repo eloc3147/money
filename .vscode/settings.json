@@ -32,6 +32,7 @@
         "serde",
         "SIGNONMSGSRSV1",
         "SONRS",
+        "sqlx",
         "STMTRS",
         "STMTTRN",
         "STMTTRNRS",

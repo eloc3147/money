@@ -1,23 +1,18 @@
 // Compatible with Tangerine and Capital One QFX files
 
-use std::{
-    borrow::Cow,
-    fs::File,
-    io::{BufRead, BufReader, Read},
-    path::Path,
-    str::FromStr,
-};
+use std::borrow::Cow;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
+use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
-use color_eyre::{
-    Report, Result,
-    eyre::{Context, OptionExt, bail, eyre},
-};
+use color_eyre::eyre::{Context, OptionExt, bail, eyre};
+use color_eyre::{Report, Result};
+
 use encoding_rs::WINDOWS_1252;
 use self_cell::self_cell;
 
-use super::loader::TransactionReader;
-use crate::data::{FileTransaction, FileTransactionType};
+use crate::importer::{Transaction, TransactionType};
 
 #[derive(Debug)]
 struct DecodedContents<'a>(pub Cow<'a, str>);
@@ -102,7 +97,7 @@ impl<'a> QfxReader {
         Ok(Self { contents, is_xml })
     }
 
-    pub fn read(&'a self) -> Result<impl Iterator<Item = Result<FileTransaction<'a>>>> {
+    pub fn read(&'a self) -> Result<impl Iterator<Item = Result<Transaction<'a>>>> {
         let lexer = Lexer::new(self.contents.borrow_dependent(), self.is_xml);
         Ok(DocumentParser::new(lexer))
     }
@@ -680,7 +675,7 @@ pub enum Severity {
 
 #[derive(Debug)]
 pub struct StatementTransaction<'a> {
-    transaction_type: TransactionType,
+    transaction_type: QfxTransactionType,
     date_posted: DateTime<FixedOffset>,
     user_date: Option<NaiveDateTime>,
     amount: f64,
@@ -696,7 +691,7 @@ pub struct AccountTo {
 }
 
 #[derive(Debug)]
-pub enum TransactionType {
+pub enum QfxTransactionType {
     Debit,
     Credit,
     Pos,
@@ -740,7 +735,7 @@ struct DocumentParser<'a> {
     read_ledger_balance: bool,
     read_available_balance: bool,
     // Transaction
-    transaction_type: Option<TransactionType>,
+    transaction_type: Option<QfxTransactionType>,
     date_posted: Option<DateTime<FixedOffset>>,
     user_date: Option<NaiveDateTime>,
     amount: Option<f64>,
@@ -1170,14 +1165,14 @@ impl<'a> DocumentParser<'a> {
         }
     }
 
-    fn get_transaction_type(&mut self) -> Result<TransactionType> {
+    fn get_transaction_type(&mut self) -> Result<QfxTransactionType> {
         match self.get_value() {
-            Ok("DEBIT") => Ok(TransactionType::Debit),
-            Ok("CREDIT") => Ok(TransactionType::Credit),
-            Ok("POS") => Ok(TransactionType::Pos),
-            Ok("ATM") => Ok(TransactionType::Atm),
-            Ok("FEE") => Ok(TransactionType::Fee),
-            Ok("OTHER") => Ok(TransactionType::Other),
+            Ok("DEBIT") => Ok(QfxTransactionType::Debit),
+            Ok("CREDIT") => Ok(QfxTransactionType::Credit),
+            Ok("POS") => Ok(QfxTransactionType::Pos),
+            Ok("ATM") => Ok(QfxTransactionType::Atm),
+            Ok("FEE") => Ok(QfxTransactionType::Fee),
+            Ok("OTHER") => Ok(QfxTransactionType::Other),
             Ok(v) => Err(eyre!("Unexpected transaction type: '{}'", v)),
             Err(e) => Err(e.wrap_err("Failed to parse transaction type")),
         }
@@ -1204,7 +1199,7 @@ impl<'a> DocumentParser<'a> {
 }
 
 impl<'a> Iterator for DocumentParser<'a> {
-    type Item = Result<FileTransaction<'a>>;
+    type Item = Result<Transaction<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_transaction() {
@@ -1218,17 +1213,18 @@ impl<'a> Iterator for DocumentParser<'a> {
                 ..
             })) => {
                 let file_transaction_type = match transaction_type {
-                    TransactionType::Debit => FileTransactionType::Debit,
-                    TransactionType::Credit => FileTransactionType::Credit,
-                    TransactionType::Pos => FileTransactionType::Pos,
-                    TransactionType::Atm => FileTransactionType::Atm,
-                    TransactionType::Fee => FileTransactionType::Fee,
-                    TransactionType::Other => FileTransactionType::Other,
+                    QfxTransactionType::Debit => TransactionType::Debit,
+                    QfxTransactionType::Credit => TransactionType::Credit,
+                    QfxTransactionType::Pos => TransactionType::Pos,
+                    QfxTransactionType::Atm => TransactionType::Atm,
+                    QfxTransactionType::Fee => TransactionType::Fee,
+                    QfxTransactionType::Other => TransactionType::Other,
                 };
+                let date = date_posted.date_naive();
 
-                Some(Ok(FileTransaction {
+                Some(Ok(Transaction {
                     transaction_type: file_transaction_type,
-                    date_posted,
+                    date_posted: date,
                     amount,
                     transaction_id,
                     name,

@@ -25,6 +25,92 @@ const PALATE = [
     "#525f7a", // slate;
 ];
 
+function stack(keys, data) {
+    let series = Array.from(keys, (key) => {
+        let s = [];
+        s.key = key;
+        return s;
+    });
+
+    let i;
+    let j = -1;
+    for (const d of data) {
+        for (i = 0, ++j; i < series.length; ++i) {
+            (series[i][j] = [0, +d[i]]).data = d;
+        }
+    }
+
+    for (i = 0; i < series.length; ++i) {
+        series[i].index = i;
+    }
+
+    let n = series.length;
+    let s0;
+    let s1 = series[0];
+    let m = s1.length;
+    for (let i = 1; i < n; ++i) {
+        s0 = s1;
+        s1 = series[i];
+        for (let j = 0; j < m; ++j) {
+            s1[j][1] += s1[j][0] = isNaN(s0[j][1]) ? s0[j][0] : s0[j][1];
+        }
+    }
+
+    return series;
+}
+
+class Loader {
+    constructor() {
+        this.loaded = false;
+        this.categories = null;
+        this.dates = null;
+        this.amounts = null;
+        this.stacked_amounts = null;
+        this.max_height = 0;
+        this.color_map = null;
+    }
+
+    async load_data() {
+        if (this.loaded) {
+            return;
+        }
+
+        const resp = await fetch("/api/transactions");
+        if (!resp.ok) {
+            throw new Error(`Loading data failed with code: ${resp.status}`);
+        }
+
+        let data = await resp.json();
+        this.categories = data.categories;
+        this.dates = Array.from(data.dates, Date.parse);
+        this.amounts = data.amounts;
+
+        this.process_data();
+    }
+
+    process_data() {
+        this.stacked_amounts = stack(this.categories, this.amounts);
+        this.max_height = 0;
+        for (const row of this.stacked_amounts) {
+            for (const cell of row) {
+                if (cell[1] > this.max_height) {
+                    this.max_height = cell[1];
+                }
+            }
+        }
+
+        let category_count = this.categories.length;
+        if (category_count > PALATE.length) {
+            console.warn(`Fewer color palate options (${PALATE.length}) than data categories (${category_count})`);
+            // throw new Error(`Fewer color palate options (${PALATE.length}) than data categories (${category_count})`);
+        }
+
+        this.color_map = new Map();
+        for (let i = 0; i < category_count; i++) {
+            this.color_map.set(i, PALATE[i % PALATE.length]);
+        }
+    }
+}
 
 export class Plot {
     constructor() {
@@ -37,10 +123,7 @@ export class Plot {
         this.width = this.container_width - this.margin.left - this.margin.right;
         this.height = this.container_height - this.margin.top - this.margin.bottom;
 
-        this.data = null;
-        this.stacked_data = null;
-        this.max_height = 0;
-        this.color_map = null;
+        this.loader = new Loader();
 
         this.idle_timeout = null;
         this.selector = null;
@@ -61,15 +144,10 @@ export class Plot {
             return;
         }
 
-        let [_, loaded_data] = await Promise.all([
+        await Promise.all([
             this.import_d3(),
-            this.load_data()
+            this.loader.load_data()
         ]);
-
-        if (loaded_data) {
-            // Requires both data and d3
-            this.process_data();
-        }
 
         rd.setChildren(this.el, await this.draw());
         this.el.removeAttribute("aria-busy");
@@ -81,39 +159,6 @@ export class Plot {
         }
 
         this.d3 = await import("https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm");
-    }
-
-    async load_data() {
-        if (this.data != null) {
-            return false;
-        }
-
-        const resp = await fetch("/api/test_data");
-        if (!resp.ok) {
-            throw new Error(`Loading data failed with code: ${resp.status}`);
-        }
-
-        this.data = await resp.json();
-        return true;
-    }
-
-    process_data() {
-        this.stacked_data = this.d3.stack().keys(Array(this.data.keys.length).keys())(this.data.rows);
-        this.max_height = 0;
-        for (const row of this.stacked_data) {
-            for (const cell of row) {
-                this.max_height = Math.max(this.max_height, cell[1]);
-            }
-        }
-
-        if (this.data.keys.length > PALATE.length) {
-            throw new Error(`Fewer color palate options (${PALATE.length}) than data keys (${this.data.keys.length})`);
-        }
-
-        this.color_map = new Map();
-        for (let i = 0; i < this.data.keys.length; i++) {
-            this.color_map.set(i, PALATE[i]);
-        }
     }
 
     // TODO: Style plot
@@ -129,11 +174,11 @@ export class Plot {
 
         // Create scaling functions
         this.x = d3.scaleLinear()
-            .domain([0, this.data.rows.length - 1])
+            .domain([this.loader.dates[0], this.loader.dates[this.loader.dates.length - 1]])
             .range([0, this.width]);
 
         const y = d3.scaleLinear()
-            .domain([0, this.max_height])
+            .domain([0, this.loader.max_height])
             .range([this.height, 0]);
 
         // Append axis ticks
@@ -176,17 +221,17 @@ export class Plot {
 
         // Area generator
         this.area = d3.area()
-            .x((d, i) => this.x(i))
+            .x(((d, i) => this.x(this.loader.dates[i])).bind(this))
             .y0((d) => y(d[0]))
             .y1((d) => y(d[1]));
 
         // Add the data to the chart
         this.area_container
             .selectAll("none")
-            .data(this.stacked_data)
+            .data(this.loader.stacked_amounts)
             .join("path")
             .attr("class", (d) => "areaTrace trace" + d.key)
-            .style("fill", ((d) => this.color_map.get(d.key)).bind(this))
+            .style("fill", ((d) => this.loader.color_map.get(d.index)).bind(this))
             .attr("d", this.area);
 
         // Selection box
@@ -204,24 +249,31 @@ export class Plot {
 
         // Add one square in the legend for each name.
         const item_size = 20
+        const reversed_categories = this.loader.categories.reverse();
         svg.selectAll("none")
-            .data([...Array(this.data.keys.length).keys()].toReversed())
+            .data(reversed_categories)
             .join("rect")
             .attr("x", this.width + 20)
             .attr("y", (d, i) => 10 + i * (item_size + 5))
             .attr("width", item_size)
             .attr("height", item_size)
-            .style("fill", ((d) => this.color_map.get(d)).bind(this))
+            .style(
+                "fill",
+                ((d, i) => this.loader.color_map.get(this.loader.categories.length - i - 1)).bind(this)
+            )
             .on("mouseover", this.highlight.bind(this))
             .on("mouseleave", this.unhighlight.bind(this));
 
         // Add one dot in the legend for each name.
         svg.selectAll("none")
-            .data(this.data.keys.reverse())
+            .data(reversed_categories)
             .join("text")
             .attr("x", this.width + 20 + item_size * 1.2)
             .attr("y", (d, i) => 10 + i * (item_size + 5) + 17)
-            .style("fill", ((d, i) => this.color_map.get(this.data.keys.length - i - 1)).bind(this))
+            .style(
+                "fill",
+                ((d, i) => this.loader.color_map.get(this.loader.categories.length - i - 1)).bind(this)
+            )
             .text((d) => d)
             .attr("text-anchor", "left")
             .style("font-size", "20px")
@@ -258,7 +310,7 @@ export class Plot {
                 return;
             }
 
-            this.x.domain([0, this.data.rows.length - 1]);
+            this.x.domain([this.loader.dates[0], this.loader.dates[this.loader.dates.length - 1]]);
         } else {
             this.x.domain([this.x.invert(extent[0]), this.x.invert(extent[1])]);
 

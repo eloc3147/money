@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 
 use color_eyre::Result;
 use color_eyre::eyre::{OptionExt, bail};
@@ -33,6 +33,7 @@ struct AccountRules {
 
 pub struct Categorizer {
     accounts: HashMap<String, AccountRules>,
+    categories: HashSet<String>,
     missing_prefix: HashMap<MissingRuleInfo, usize>,
     missing_rule: HashMap<MissingRuleInfo, usize>,
 }
@@ -42,6 +43,7 @@ impl Categorizer {
         transaction_types: Vec<TransactionTypeConfig>,
         rules: Vec<TransactionRuleConfig>,
     ) -> Result<Self> {
+        let mut all_categories = HashSet::new();
         let mut type_categories: HashMap<UserTransactionType, HashMap<String, String>> =
             HashMap::new();
         for rule in rules {
@@ -62,6 +64,8 @@ impl Categorizer {
                     }
                 }
             }
+
+            all_categories.insert(rule.category);
         }
 
         let mut accounts = HashMap::new();
@@ -95,9 +99,14 @@ impl Categorizer {
 
         Ok(Self {
             accounts,
+            categories: all_categories,
             missing_prefix: HashMap::new(),
             missing_rule: HashMap::new(),
         })
+    }
+
+    pub fn categories(&self) -> &HashSet<String> {
+        &self.categories
     }
 
     pub fn categorize(

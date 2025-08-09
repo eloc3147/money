@@ -1,37 +1,50 @@
-use serde::Serialize;
-use warp::Filter;
-use warp::filters::BoxedFilter;
-use warp::http::StatusCode;
-use warp::reply::Reply;
+use crate::db::{DbConnection, TransactionsByCategory};
+use axum::http::StatusCode;
+use axum::routing::get;
+use axum::{Json, Router};
+use color_eyre::eyre::{self, Report, WrapErr};
+use console::style;
+use sqlx::SqlitePool;
+use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
 
-#[derive(Debug, Serialize)]
-struct TestData {
-    keys: &'static [&'static str],
-    rows: &'static [&'static [u32]],
+async fn get_transactions(
+    mut conn: DbConnection,
+) -> Result<Json<TransactionsByCategory>, (StatusCode, String)> {
+    conn.get_transactions()
+        .await
+        .map(Json)
+        .map_err(internal_eyre)
 }
 
-fn build_data() -> TestData {
-    TestData {
-        keys: &["A", "B", "C"],
-        rows: &[&[1, 2, 3], &[3, 3, 2], &[2, 3, 0]],
-    }
+pub fn internal_eyre(err: Report) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
-pub fn build_routes() -> BoxedFilter<(impl Reply,)> {
-    let test_data = warp::path("test_data")
-        .and(warp::path::end())
-        .and(warp::get())
-        .map(|| {
-            let data = build_data();
-            warp::reply::json(&data)
-        });
-    let api = warp::path("api").and(test_data);
+pub fn internal_error<E>(err: E) -> (StatusCode, String)
+where
+    E: std::error::Error,
+{
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
 
-    let assets = warp::path("assets").and(warp::fs::dir("web/assets"));
-    let home = warp::path::end().and(warp::fs::file("web/index.html"));
-    let missing = warp::any()
-        .map(warp::reply)
-        .map(|r| warp::reply::with_status(r, StatusCode::NOT_FOUND));
+pub async fn run(db_pool: SqlitePool) -> eyre::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:3030").await.unwrap();
 
-    home.or(assets).or(api).or(missing).boxed()
+    let api = Router::new()
+        .route("/transactions", get(get_transactions))
+        .with_state(db_pool);
+
+    let app = Router::new()
+        .nest("/api", api)
+        .fallback_service(ServeDir::new("web"));
+
+    println!(
+        "Starting server at {}",
+        style("http://127.0.0.1:3030").bold().bright().blue()
+    );
+
+    axum::serve(listener, app)
+        .await
+        .wrap_err("Failed to start server")
 }

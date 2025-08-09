@@ -1,65 +1,18 @@
-mod data;
+mod db;
 mod importer;
 mod server;
 
-use std::{path::PathBuf, time::Duration};
-
-use color_eyre::{
-    Result,
-    eyre::{Context, eyre},
-};
+use color_eyre::Result;
+use color_eyre::eyre::{Context, eyre};
 use console::{Emoji, style};
 use importer::categorizer::Categorizer;
 use importer::config::AppConfig;
-use importer::loader::Loader;
 use indicatif::MultiProgress;
-use tokio::runtime::Builder;
-use warp;
+use std::path::PathBuf;
 
-fn load_data() -> Result<()> {
-    color_eyre::install()?;
+use crate::db::DbConnection;
 
-    let data_dir = dirs::data_dir()
-        .ok_or_else(|| eyre!("OS user data directory missing"))?
-        .join("money_app");
-    let config_path = data_dir.join("config.toml");
-
-    println!(
-        "{} {}Loading config ({})...",
-        style("[1/4]").bold().dim(),
-        Emoji("📄 ", ""),
-        config_path.to_string_lossy()
-    );
-
-    let config = AppConfig::load(&config_path).wrap_err("Failed to load config")?;
-
-    println!(
-        "{} {}Building rules...",
-        style("[2/4]").bold().dim(),
-        Emoji("⚙️ ", "")
-    );
-    let mut categorizer = Categorizer::build(config.transaction_type, config.rule)
-        .wrap_err("Failed to load transaction rules")?;
-
-    println!(
-        "{} {}Loading transaction files...",
-        style("[3/4]").bold().dim(),
-        Emoji("🏦 ", ""),
-    );
-    let mut load_progress = MultiProgress::new();
-    let data = importer::import_data(&mut categorizer, &config.account, &mut load_progress)
-        .wrap_err("Failed to load transactions")?;
-
-    data.dump_to_file(&PathBuf::from("X:/Code/money/dmp.sqlite"))?;
-
-    load_progress.clear()?;
-
-    println!(
-        "{} {}Import complete",
-        style("[4/4]").bold().dim(),
-        Emoji("✅ ", ""),
-    );
-
+fn print_uncategorized(categorizer: &Categorizer) {
     let (missing_prefix, missing_rule) = categorizer.get_missing_stats();
 
     if missing_prefix.len() > 0 {
@@ -112,34 +65,78 @@ fn load_data() -> Result<()> {
             println!("{}", style("...").bright().white());
         }
     }
-
-    Ok(())
 }
 
-async fn run_server() {
-    let routes = server::build_routes();
-
-    println!(
-        "Starting server at {}",
-        style("http://127.0.0.1:3030").bold().bright().blue()
-    );
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
+    tokio::task::spawn_blocking(move || AppConfig::load(&config_path))
+        .await?
+        .wrap_err("Failed to load config")
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
+    color_eyre::install()?;
+
     println!("{}", style("Money").white());
 
-    load_data()?;
+    let data_dir = dirs::data_dir()
+        .ok_or_else(|| eyre!("OS user data directory missing"))?
+        .join("money_app");
 
-    let runtime = Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_name("money-web")
-        .enable_all()
-        .build()
-        .wrap_err("Failed to launch tokio runtime")?;
+    let config_path = data_dir.join("config.toml");
+    println!(
+        "{} {}Loading config ({})...",
+        style("[1/4]").bold().dim(),
+        Emoji("📄 ", ""),
+        config_path.to_string_lossy()
+    );
+    let config = load_config(config_path).await?;
 
-    runtime.block_on(run_server());
-    runtime.shutdown_timeout(Duration::from_secs(3));
+    println!(
+        "{} {}Building rules...",
+        style("[2/4]").bold().dim(),
+        Emoji("⚙️ ", "")
+    );
+    let mut categorizer = Categorizer::build(config.transaction_type, config.rule)
+        .wrap_err("Failed to load transaction rules")?;
+
+    println!(
+        "{} {}Loading transaction files...",
+        style("[3/4]").bold().dim(),
+        Emoji("🏦 ", ""),
+    );
+    let mut load_progress = MultiProgress::new();
+
+    let db_pool = db::build().await.wrap_err("Failed to setup DB")?;
+    let mut import_conn = db_pool
+        .acquire()
+        .await
+        .map(|conn| DbConnection { conn })
+        .wrap_err("Failed to connect to DB")?;
+
+    importer::import_data(
+        &mut categorizer,
+        &mut import_conn,
+        &config.account,
+        &mut load_progress,
+    )
+    .await
+    .wrap_err("Failed to load transactions")?;
+
+    load_progress.clear()?;
+
+    // TMP
+    import_conn.dump_transactions().await?;
+
+    println!(
+        "{} {}Import complete",
+        style("[4/4]").bold().dim(),
+        Emoji("✅ ", ""),
+    );
+
+    print_uncategorized(&categorizer);
+
+    server::run(db_pool).await?;
 
     Ok(())
 }

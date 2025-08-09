@@ -3,15 +3,14 @@ use color_eyre::eyre::{Context, eyre};
 use std::fs::ReadDir;
 use std::path::{Path, PathBuf};
 
-use crate::data::FileTransaction;
-use crate::importer::qfx;
+use crate::importer::{Transaction, qfx};
 
 pub enum TransactionReader {
     QfxReader(qfx::QfxReader),
 }
 
 impl<'a> TransactionReader {
-    pub fn transactions(&'a self) -> Result<impl Iterator<Item = Result<FileTransaction<'a>>>> {
+    pub fn transactions(&'a self) -> Result<impl Iterator<Item = Result<Transaction<'a>>>> {
         match self {
             Self::QfxReader(r) => r.read(),
         }
