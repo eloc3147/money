@@ -2,13 +2,14 @@ mod db;
 mod importer;
 mod server;
 
+use std::path::PathBuf;
+
 use color_eyre::Result;
 use color_eyre::eyre::{Context, eyre};
 use console::{Emoji, style};
 use importer::categorizer::Categorizer;
 use importer::config::AppConfig;
 use indicatif::MultiProgress;
-use std::path::PathBuf;
 
 use crate::db::DbConnection;
 

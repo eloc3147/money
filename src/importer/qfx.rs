@@ -8,7 +8,6 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 use color_eyre::eyre::{Context, OptionExt, bail, eyre};
 use color_eyre::{Report, Result};
-
 use encoding_rs::WINDOWS_1252;
 use self_cell::self_cell;
 

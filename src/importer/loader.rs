@@ -1,7 +1,8 @@
-use color_eyre::Result;
-use color_eyre::eyre::{Context, eyre};
 use std::fs::ReadDir;
 use std::path::{Path, PathBuf};
+
+use color_eyre::Result;
+use color_eyre::eyre::{Context, eyre};
 
 use crate::importer::{Transaction, qfx};
 

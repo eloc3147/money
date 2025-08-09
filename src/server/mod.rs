@@ -1,4 +1,3 @@
-use crate::db::{DbConnection, TransactionsByCategory};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -7,6 +6,8 @@ use console::style;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
+
+use crate::db::{DbConnection, TransactionsByCategory};
 
 async fn get_transactions(
     mut conn: DbConnection,

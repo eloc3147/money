@@ -1,10 +1,9 @@
-use std::{
-    fs::File,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
-use color_eyre::{Result, eyre::Context};
+use color_eyre::Result;
+use color_eyre::eyre::Context;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
