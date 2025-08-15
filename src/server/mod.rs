@@ -38,7 +38,7 @@ pub async fn run(db_pool: SqlitePool) -> eyre::Result<()> {
 
     let app = Router::new()
         .nest("/api", api)
-        .fallback_service(ServeDir::new("web"));
+        .fallback_service(ServeDir::new("assets"));
 
     println!(
         "Starting server at {}",

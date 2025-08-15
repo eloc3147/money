@@ -40,5 +40,7 @@
         "TRNTYPE",
         "TRNUID",
         "USASCII"
-    ]
+    ],
+    "typescript.tsdk": "node_modules\\typescript\\lib",
+    "typescript.tsserver.experimental.enableProjectDiagnostics": true
 }

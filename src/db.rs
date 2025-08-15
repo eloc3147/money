@@ -240,7 +240,8 @@ impl DbConnection {
                     amounts.push(current_row);
                     current_row = Vec::with_capacity(row_len);
                     column = 0;
-                    dates.push(current_date);
+
+                    dates.push(date_str.to_string());
                 }
 
                 current_date = date_str.to_string();
