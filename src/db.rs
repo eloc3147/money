@@ -1,12 +1,12 @@
-use std::ffi::CString;
-use std::time::Duration;
+use std::fs::File;
+use std::path::PathBuf;
 
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use chrono::NaiveDate;
 use color_eyre::Result;
-use color_eyre::eyre::{Context, bail};
+use color_eyre::eyre::Context;
 use futures::{Stream, TryStreamExt};
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
@@ -257,45 +257,15 @@ impl DbConnection {
     }
 
     pub async fn dump_transactions(&mut self) -> Result<()> {
-        let to_pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("file:dmp.sqlite?mode=rwc")
-            .await
-            .wrap_err("Failed to open backup database")?;
-        let mut to_conn = to_pool
-            .acquire()
-            .await
-            .wrap_err("Failed to get backup DB handle")?;
-
-        let from_handle = self.conn.lock_handle().await?.as_raw_handle();
-        let to_handle = to_conn.lock_handle().await?.as_raw_handle();
-        let to_name = CString::new("main")?;
-        let from_name = CString::new("main")?;
-
-        let backup = unsafe {
-            let b = libsqlite3_sys::sqlite3_backup_init(
-                to_handle.as_ptr(),
-                to_name.as_ptr(),
-                from_handle.as_ptr(),
-                from_name.as_ptr(),
-            );
-            if b.is_null() {
-                bail!("Failed to get backup handle");
-            }
-            b
-        };
-
-        // Just block the thread
-        loop {
-            let rc = unsafe { libsqlite3_sys::sqlite3_backup_step(backup, 10) };
-            match rc {
-                libsqlite3_sys::SQLITE_DONE => return Ok(()),
-                libsqlite3_sys::SQLITE_OK
-                | libsqlite3_sys::SQLITE_BUSY
-                | libsqlite3_sys::SQLITE_LOCKED => std::thread::sleep(Duration::from_millis(10)),
-                v => bail!("Unknown error during backup: {:?}", v),
-            }
+        let dump_path = PathBuf::from("dmp.sqlite");
+        if dump_path.exists() {
+            std::fs::remove_file(dump_path)?;
         }
+
+        sqlx::raw_sql("VACUUM INTO \"file:dmp.sqlite?mode=rwc\";")
+            .execute(&mut *self.conn)
+            .await?;
+        Ok(())
     }
 }
 
