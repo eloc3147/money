@@ -136,7 +136,7 @@ impl Categorizer {
             return Ok(None);
         };
 
-        let display_name = match decoder.name_source {
+        let mut display_name = match decoder.name_source {
             NameSource::Memo => match memo {
                 Some(m) => m,
                 None => bail!("Missing memo for transaction using memo as the name source"),
@@ -146,6 +146,7 @@ impl Categorizer {
                 .strip_prefix(prefix)
                 .ok_or_eyre("Name does not contain selected prefix")?,
         };
+        display_name = display_name.trim();
 
         let Some(category) = decoder.categories.get(display_name) else {
             let count = self
