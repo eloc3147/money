@@ -37,7 +37,8 @@ export default defineConfig([
       "no-inline-comments": "off",
       "one-var": "off",
       "prefer-destructuring": "off",
-      "sort-keys": "off"
+      "sort-keys": "off",
+      "init-declarations": "off"
     }
   }
 ]);

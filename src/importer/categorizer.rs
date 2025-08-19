@@ -175,4 +175,8 @@ impl Categorizer {
     ) {
         (&self.missing_prefix, &self.missing_rule)
     }
+
+    pub fn uncategorized_seen(&self) -> bool {
+        self.missing_prefix.len() > 0 || self.missing_rule.len() > 0
+    }
 }

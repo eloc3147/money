@@ -13,8 +13,17 @@ export interface TransactionsResponse {
     amounts: number[][];
 }
 
-export async function loadTransactions(): Promise<TransactionsResponse> {
-    const resp = await apiRequest("transactions") as any;
+export async function loadExpenses(): Promise<TransactionsResponse> {
+    const resp = await apiRequest("expenses") as any;
+    return {
+        categories: resp.categories,
+        dates: Array.from(resp.dates, (dateStr: string) => new Date(dateStr)),
+        amounts: resp.amounts,
+    };
+}
+
+export async function loadIncome(): Promise<TransactionsResponse> {
+    const resp = await apiRequest("income") as any;
     return {
         categories: resp.categories,
         dates: Array.from(resp.dates, (dateStr: string) => new Date(dateStr)),

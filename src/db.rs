@@ -7,10 +7,10 @@ use axum::http::request::Parts;
 use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::{Context, bail};
-use futures::TryStreamExt;
+use futures::{Stream, TryStreamExt};
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
-use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{Connection, Row, Sqlite, SqlitePool};
 
 use crate::importer::TransactionType;
@@ -176,7 +176,47 @@ impl DbConnection {
         Ok(())
     }
 
-    pub async fn get_transactions(&mut self) -> Result<TransactionsByCategory> {
+    pub async fn get_expense_transactions(&mut self) -> Result<TransactionsByCategory> {
+        let mut rows = sqlx::query(
+            "SELECT
+                c2.base_category,
+                d2.date_str,
+                ABS(IFNULL(t2.amount, 0.0)) as amount
+            FROM (
+                SELECT DISTINCT
+                    strftime('%Y-%m-01', d.date_str) as date_str
+                FROM dates d
+                ORDER BY date_str
+            ) d2
+            CROSS JOIN (
+                SELECT DISTINCT 
+                    c.base_category
+                FROM
+                    categories c
+                ORDER BY
+                    c.base_category
+            ) c2
+            LEFT JOIN (
+                SELECT
+                    t.base_category,
+                    strftime('%Y-%m-01', t.date_str) as ds,
+                    SUM(-t.amount) as amount
+                FROM
+                    transactions t
+                WHERE
+                    t.amount < 0
+                GROUP BY
+                    ds,
+                    base_category
+            ) t2 ON t2.base_category = c2.base_category
+                AND t2.ds = d2.date_str;",
+        )
+        .fetch(&mut *self.conn);
+
+        TransactionsByCategory::from_rows(&mut rows).await
+    }
+
+    pub async fn get_income_transactions(&mut self) -> Result<TransactionsByCategory> {
         let mut rows = sqlx::query(
             "SELECT
                 c2.base_category,
@@ -203,6 +243,8 @@ impl DbConnection {
                     SUM(t.amount) as amount
                 FROM
                     transactions t
+                WHERE
+                    t.amount > 0
                 GROUP BY
                     ds,
                     base_category
@@ -211,59 +253,7 @@ impl DbConnection {
         )
         .fetch(&mut *self.conn);
 
-        let mut first_date = true;
-
-        // Build hashmap of category to date to amount
-        // This allows us to fill in missing dates, as well as separates transactions by category
-        let mut row_len = 0;
-        let mut column = 0;
-        let mut current_row = Vec::new();
-        let mut current_date = String::new();
-
-        let mut categories = Vec::new();
-        let mut dates = Vec::new();
-        let mut amounts = Vec::new();
-        while let Some(row) = rows.try_next().await? {
-            let category: &str = row.try_get(0usize)?;
-            let date_str: &str = row.try_get(1usize)?;
-            let amount: f32 = row.try_get(2usize)?;
-
-            if current_date != date_str {
-                if current_row.len() > 0 {
-                    if first_date {
-                        row_len = current_row.len();
-                        first_date = false;
-                    } else {
-                        debug_assert_eq!(row_len, current_row.len());
-                    }
-
-                    amounts.push(current_row);
-                    current_row = Vec::with_capacity(row_len);
-                    column = 0;
-
-                    dates.push(date_str.to_string());
-                }
-
-                current_date = date_str.to_string();
-            }
-
-            if first_date {
-                categories.push(category.to_string());
-            } else {
-                debug_assert_eq!(category, categories[column]);
-            }
-
-            // TODO: Deal with negatives
-            current_row.push(amount.abs());
-
-            column += 1;
-        }
-
-        Ok(TransactionsByCategory {
-            categories,
-            dates,
-            amounts,
-        })
+        TransactionsByCategory::from_rows(&mut rows).await
     }
 
     pub async fn dump_transactions(&mut self) -> Result<()> {
@@ -330,4 +320,64 @@ pub struct TransactionsByCategory {
     categories: Vec<String>,
     dates: Vec<String>,
     amounts: Vec<Vec<f32>>,
+}
+
+impl TransactionsByCategory {
+    async fn from_rows<F>(rows: &mut F) -> Result<Self>
+    where
+        F: Stream<Item = std::result::Result<SqliteRow, sqlx::Error>> + Unpin + Send,
+    {
+        let mut first_date = true;
+
+        // Build hashmap of category to date to amount
+        // This allows us to fill in missing dates, as well as separates transactions by category
+        let mut row_len = 0;
+        let mut column = 0;
+        let mut current_row = Vec::new();
+        let mut current_date = String::new();
+
+        let mut categories = Vec::new();
+        let mut dates = Vec::new();
+        let mut amounts = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let category: &str = row.try_get(0usize)?;
+            let date_str: &str = row.try_get(1usize)?;
+            let amount: f32 = row.try_get(2usize)?;
+
+            if current_date != date_str {
+                if current_row.len() > 0 {
+                    if first_date {
+                        row_len = current_row.len();
+                        first_date = false;
+                    } else {
+                        debug_assert_eq!(row_len, current_row.len());
+                    }
+
+                    amounts.push(current_row);
+                    current_row = Vec::with_capacity(row_len);
+                    column = 0;
+
+                    dates.push(date_str.to_string());
+                }
+
+                current_date = date_str.to_string();
+            }
+
+            if first_date {
+                categories.push(category.to_string());
+            } else {
+                debug_assert_eq!(category, categories[column]);
+            }
+
+            current_row.push(amount);
+
+            column += 1;
+        }
+
+        Ok(Self {
+            categories,
+            dates,
+            amounts,
+        })
+    }
 }

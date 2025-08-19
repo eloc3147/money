@@ -1,39 +1,85 @@
+import { TransactionsResponse, loadExpenses, loadIncome } from "./api";
 import { el, setChildren } from "redom";
 import { Plot } from "./plot";
 
+
+enum Page {
+    Expenses,
+    Income,
+}
+
+
 class PageHeader {
+    expenseButton: HTMLAnchorElement;
+    incomeButton: HTMLAnchorElement;
     el: HTMLElement;
 
-    constructor() {
+    constructor(contents: Contents) {
         this.el = el("header.container-fluid", el("nav", [
             el("ul", el("li", el("strong", "Money"))),
             el("ul", [
-                el("li", el("a", "Plot")),
-                el("li", el("a", "Other")),
-                el("li", el("a", "More Other"))
+                el("li", this.expenseButton = el("a", "Expenses")),
+                el("li", this.incomeButton = el("a", "Income"))
             ]),
         ]));
+
+        this.expenseButton.onclick = async (_evt: MouseEvent) => {
+            await contents.main.selectPage(Page.Expenses);
+        };
+
+        this.incomeButton.onclick = async (_evt: MouseEvent) => {
+            await contents.main.selectPage(Page.Income);
+        };
     }
 }
 
+
 class PageContents {
-    selected: boolean;
+    selected: Page;
+    loaded: Page | null;
+
+    plot: Plot;
     el: HTMLElement;
 
     constructor() {
-        this.selected = false;  // Turn to enum when there are multiple options
+        this.selected = Page.Expenses;
+        this.loaded = null;
 
-        this.el = el("main.container-fluid");
+        this.plot = new Plot();
+        this.el = el("main.container-fluid", this.plot);
     }
 
-    onmount() {
+    async onmount() {
         if (!this.selected) {
-            this.selectPlot();
+            await this.updatePage();
         }
     }
 
-    selectPlot() {
-        setChildren(this.el, [new Plot()]);
+    async selectPage(page: Page) {
+        this.selected = page;
+        await this.updatePage();
+    }
+
+    async updatePage() {
+        if (this.loaded === this.selected) {
+            return;
+        }
+
+        let transactions: TransactionsResponse;
+        switch (this.selected) {
+            case Page.Expenses:
+                transactions = await loadExpenses();
+                break;
+            case Page.Income:
+                transactions = await loadIncome();
+                break;
+            default:
+                return;
+        }
+
+        this.loaded = this.selected;
+        this.plot.setTransactions(transactions);
+        this.plot.updatePlot();
     }
 }
 
@@ -43,7 +89,7 @@ class Contents {
     main: PageContents;
 
     constructor() {
-        this.header = new PageHeader();
+        this.header = new PageHeader(this);
         this.main = new PageContents();
     }
 }

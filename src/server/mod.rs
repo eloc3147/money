@@ -9,10 +9,19 @@ use tower_http::services::ServeDir;
 
 use crate::db::{DbConnection, TransactionsByCategory};
 
-async fn get_transactions(
+async fn get_expense_transactions(
     mut conn: DbConnection,
 ) -> Result<Json<TransactionsByCategory>, (StatusCode, String)> {
-    conn.get_transactions()
+    conn.get_expense_transactions()
+        .await
+        .map(Json)
+        .map_err(internal_eyre)
+}
+
+async fn get_income_transactions(
+    mut conn: DbConnection,
+) -> Result<Json<TransactionsByCategory>, (StatusCode, String)> {
+    conn.get_income_transactions()
         .await
         .map(Json)
         .map_err(internal_eyre)
@@ -33,7 +42,8 @@ pub async fn run(db_pool: SqlitePool) -> eyre::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:3030").await.unwrap();
 
     let api = Router::new()
-        .route("/transactions", get(get_transactions))
+        .route("/expenses", get(get_expense_transactions))
+        .route("/income", get(get_income_transactions))
         .with_state(db_pool);
 
     let app = Router::new()

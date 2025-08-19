@@ -1,8 +1,8 @@
 import * as d3 from "d3";
-import { el, setChildren } from "redom";
 import { Coordinate, StackData, StackRow, stack } from "./stack_area";
-import { TransactionsResponse, loadTransactions } from "./api";
+import { el, setChildren } from "redom";
 import { Timer } from "./timer";
+import { TransactionsResponse } from "./api";
 
 const PALATE = [
     // "#c52f21", // Red;
@@ -301,16 +301,24 @@ export class Plot {
         this.el = el("div", { "aria-busy": true });
     }
 
-    async onmount() {
-        await this.updatePlot();
+    onmount() {
+        this.updatePlot();
     }
 
-    async updatePlot() {
+    setTransactions(transactions: TransactionsResponse) {
+        this.transactions = transactions;
+        this.drawn = false;
+    }
+
+    updatePlot() {
         if (this.drawn) {
             return;
         }
 
-        this.transactions = await loadTransactions();
+        if (this.transactions ===  null) {
+            throw new Error("Transactions must be set before updating plot");
+        }
+
         this.stackedData = stack(this.transactions.categories, this.transactions.amounts);
         this.maxHeight = Math.max(...this.stackedData.map(row => Math.max(...row.map(coord => coord[1]))))
 

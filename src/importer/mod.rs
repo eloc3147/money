@@ -47,10 +47,7 @@ pub async fn import_data(
     spinner.set_style(ProgressStyle::default_spinner());
     spinner.tick();
 
-    for category in categorizer.categories() {
-        conn.add_category(category).await?;
-    }
-
+    // Add transactions
     let mut first_date = NaiveDate::MAX;
     let mut last_date = NaiveDate::MIN;
     for account in accounts {
@@ -126,6 +123,16 @@ pub async fn import_data(
         }
     }
 
+    // Add categories
+    for category in categorizer.categories() {
+        conn.add_category(category).await?;
+    }
+
+    if categorizer.uncategorized_seen() {
+        conn.add_category("Uncategorized").await?;
+    }
+
+    // Fill date range
     let mut add_date = first_date;
     while add_date <= last_date {
         conn.add_date(add_date).await?;
