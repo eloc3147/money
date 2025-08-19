@@ -2,7 +2,7 @@
 authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
 edition = "2024"
 name = "money"
-version = "0.2.1"
+version = "0.2.2"
 
 [dependencies]
 # Error handling

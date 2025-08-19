@@ -86,6 +86,7 @@ pub async fn import_data(
                 "Loading {}",
                 file_path.strip_prefix(base_path).unwrap().to_string_lossy()
             ));
+            account_spinner.tick();
 
             let transactions = reader.transactions()?;
             for transaction in transactions {
@@ -121,16 +122,25 @@ pub async fn import_data(
                 .await?;
             }
         }
+
+        account_spinner.finish();
+        progress.remove(&account_spinner);
     }
+
+    spinner.set_message("Loading metadata");
 
     // Add categories
     for category in categorizer.categories() {
         conn.add_category(category).await?;
     }
 
+    spinner.tick();
+
     if categorizer.uncategorized_seen() {
         conn.add_category("Uncategorized").await?;
     }
+
+    spinner.tick();
 
     // Fill date range
     let mut add_date = first_date;
@@ -138,6 +148,9 @@ pub async fn import_data(
         conn.add_date(add_date).await?;
         add_date = add_date + Days::new(1);
     }
+
+    spinner.finish();
+    progress.remove(&spinner);
 
     Ok(())
 }

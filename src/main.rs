@@ -78,11 +78,16 @@ async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    println!("{}", style("Money").white());
+    println!(
+        "{}",
+        style(concat!("Money v", env!("CARGO_PKG_VERSION"))).white()
+    );
 
     let data_dir = dirs::data_dir()
         .ok_or_else(|| eyre!("OS user data directory missing"))?
         .join("money_app");
+
+    println!("Data directory: {}\n", data_dir.to_string_lossy());
 
     let config_path = data_dir.join("config.toml");
     println!(

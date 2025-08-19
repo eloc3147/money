@@ -89,7 +89,7 @@ impl Loader {
                 Ok(Some((file_path, TransactionReader::QfxReader(reader))))
             }
             "csv" => {
-                println!("CSV exit early");
+                // println!("CSV exit early");
                 Ok(None)
             }
             ext => Err(eyre!("Unrecognized file type: {}", ext)),
