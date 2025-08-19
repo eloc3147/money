@@ -53,11 +53,15 @@ fn print_uncategorized(categorizer: &Categorizer) {
         println!("Most frequent transactions missing category rules:");
         for (info, count) in items.iter().take(20) {
             println!(
-                "{:28} | {:40}: {}",
-                style(&format!("{:?}", info.transaction_type))
-                    .bright()
-                    .white()
-                    .bold(),
+                "{:22} | {:40}: {}",
+                style(
+                    info.transaction_type
+                        .map(|t| format!("{:?}", t))
+                        .unwrap_or_else(|| String::new())
+                )
+                .bright()
+                .white()
+                .bold(),
                 style(&info.display).bright().white().bold(),
                 style(count).bright().cyan()
             );
