@@ -37,7 +37,8 @@ pub async fn build() -> Result<SqlitePool> {
     sqlx::query(
         "CREATE TABLE categories (
             base_category TEXT NOT NULL,
-            category TEXT NOT NULL
+            category      TEXT NOT NULL,
+            income        INTEGER
         );",
     )
     .execute(&mut *conn)
@@ -59,6 +60,7 @@ pub async fn build() -> Result<SqlitePool> {
             account          INTEGER,
             base_category    TEXT NOT NULL,
             category         TEXT NOT NULL,
+            income           INTEGER,
             transaction_type INTEGER,
             date_str         TEXT,
             amount           REAL,
@@ -79,15 +81,18 @@ pub struct DbConnection {
 }
 
 impl DbConnection {
-    pub async fn add_category(&mut self, category: &str) -> Result<()> {
+    pub async fn add_category(&mut self, category: &str, income: bool) -> Result<()> {
         let base_category = category.split(".").next().unwrap();
 
-        sqlx::query("INSERT INTO categories (base_category, category) values (?1, ?2);")
-            .bind(base_category)
-            .bind(category)
-            .execute(&mut *self.conn)
-            .await
-            .wrap_err("Failed to add category")?;
+        sqlx::query(
+            "INSERT INTO categories (base_category, category, income) values (?1, ?2, ?3);",
+        )
+        .bind(base_category)
+        .bind(category)
+        .bind(income)
+        .execute(&mut *self.conn)
+        .await
+        .wrap_err("Failed to add category")?;
 
         Ok(())
     }
@@ -127,6 +132,7 @@ impl DbConnection {
         &mut self,
         account_id: i64,
         category: &str,
+        income: bool,
         transaction_type: TransactionType,
         date_posted: NaiveDate,
         amount: f64,
@@ -141,6 +147,7 @@ impl DbConnection {
                 account,
                 base_category,
                 category,
+                income,
                 transaction_type,
                 date_str,
                 amount,
@@ -156,12 +163,14 @@ impl DbConnection {
                 ?6,
                 ?7,
                 ?8,
-                ?9
+                ?9,
+                ?10
             );",
         )
         .bind(account_id)
         .bind(base_category)
         .bind(category)
+        .bind(income)
         .bind::<u8>(transaction_type.into())
         .bind(date_posted.to_string())
         .bind(amount)
@@ -180,18 +189,22 @@ impl DbConnection {
             "SELECT
                 c2.base_category,
                 d2.date_str,
-                ABS(IFNULL(t2.amount, 0.0)) as amount
+                MAX(IFNULL(t2.amount, 0.0), 0.0) as amount
             FROM (
                 SELECT DISTINCT
                     strftime('%Y-%m-01', d.date_str) as date_str
-                FROM dates d
-                ORDER BY date_str
+                FROM
+                    dates d
+                ORDER BY
+                    date_str
             ) d2
             CROSS JOIN (
                 SELECT DISTINCT 
                     c.base_category
                 FROM
                     categories c
+                WHERE
+                    c.income = FALSE
                 ORDER BY
                     c.base_category
             ) c2
@@ -203,7 +216,7 @@ impl DbConnection {
                 FROM
                     transactions t
                 WHERE
-                    t.amount < 0
+                    t.income = FALSE
                 GROUP BY
                     ds,
                     base_category
@@ -220,18 +233,22 @@ impl DbConnection {
             "SELECT
                 c2.base_category,
                 d2.date_str,
-                ABS(IFNULL(t2.amount, 0.0)) as amount
+                MAX(IFNULL(t2.amount, 0.0), 0.0) as amount
             FROM (
                 SELECT DISTINCT
                     strftime('%Y-%m-01', d.date_str) as date_str
-                FROM dates d
-                ORDER BY date_str
+                FROM
+                    dates d
+                ORDER BY
+                    date_str
             ) d2
             CROSS JOIN (
                 SELECT DISTINCT 
                     c.base_category
                 FROM
                     categories c
+                WHERE
+                    c.income = TRUE
                 ORDER BY
                     c.base_category
             ) c2
@@ -243,7 +260,7 @@ impl DbConnection {
                 FROM
                     transactions t
                 WHERE
-                    t.amount > 0
+                    t.income = TRUE
                 GROUP BY
                     ds,
                     base_category

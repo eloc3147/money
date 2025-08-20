@@ -21,6 +21,7 @@ pub enum UserTransactionType {
     SentEtransfer,
     ReceivedEtransfer,
     CancelledEtransfer,
+    InterAccountTransfer,
     SentDirectDeposit,
     ReceivedDirectDeposit,
     AtmWithdrawal,
@@ -29,7 +30,7 @@ pub enum UserTransactionType {
     BankFee,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub enum NameSource {
     Memo,
     Name,
@@ -40,6 +41,8 @@ pub enum NameSource {
 pub struct TransactionTypeConfig {
     pub transaction_type: UserTransactionType,
     pub prefix: String,
+    #[serde(default)]
+    pub income: bool,
     pub name_source: NameSource,
     pub accounts: Vec<String>,
 }

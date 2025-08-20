@@ -100,14 +100,16 @@ async fn main() -> Result<()> {
         Emoji("📄 ", ""),
         config_path.to_string_lossy()
     );
-    let config = load_config(config_path).await?;
+    let config = load_config(config_path)
+        .await
+        .map(|c| Box::leak(Box::new(c)))?;
 
     println!(
         "{} {}Building rules...",
         style("[2/4]").bold().dim(),
         Emoji("⚙️ ", "")
     );
-    let mut categorizer = Categorizer::build(config.transaction_type, config.rule)
+    let mut categorizer = Categorizer::build(&config.transaction_type, &config.rule)
         .wrap_err("Failed to load transaction rules")?;
 
     println!(

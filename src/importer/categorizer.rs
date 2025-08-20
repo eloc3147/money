@@ -13,7 +13,8 @@ use crate::importer::config::{
 struct TransactionDecoder {
     transaction_type: UserTransactionType,
     name_source: NameSource,
-    categories: HashMap<String, String>,
+    income: bool,
+    categories: HashMap<&'static str, &'static str>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -31,26 +32,31 @@ struct AccountRules {
     prefixes: GenericPatriciaMap<String, TransactionDecoder>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CategorizationResult {
+    pub income: bool,
+    pub category: &'static str,
+}
+
 pub struct Categorizer {
-    accounts: HashMap<String, AccountRules>,
-    categories: HashSet<String>,
+    accounts: HashMap<&'static str, AccountRules>,
+    categories: HashSet<(&'static str, bool)>,
     missing_prefix: HashMap<MissingRuleInfo, usize>,
     missing_rule: HashMap<MissingRuleInfo, usize>,
 }
 
 impl Categorizer {
     pub fn build(
-        transaction_types: Vec<TransactionTypeConfig>,
-        rules: Vec<TransactionRuleConfig>,
+        transaction_types: &'static [TransactionTypeConfig],
+        rules: &'static [TransactionRuleConfig],
     ) -> Result<Self> {
-        let mut all_categories = HashSet::new();
-        let mut type_categories: HashMap<UserTransactionType, HashMap<String, String>> =
+        let mut type_categories: HashMap<UserTransactionType, HashMap<&'static str, &'static str>> =
             HashMap::new();
         for rule in rules {
             let entry = type_categories.entry(rule.transaction_type).or_default();
 
-            for pattern_str in rule.patterns {
-                match entry.entry(pattern_str) {
+            for pattern_str in &rule.patterns {
+                match entry.entry(pattern_str.as_str()) {
                     Entry::Occupied(e) => {
                         bail!(
                             "Duplicate rule for pattern {:?}. Old category: {:?}, new category: {:?}",
@@ -60,14 +66,13 @@ impl Categorizer {
                         );
                     }
                     Entry::Vacant(e) => {
-                        e.insert(rule.category.clone());
+                        e.insert(rule.category.as_str());
                     }
                 }
             }
-
-            all_categories.insert(rule.category);
         }
 
+        let mut all_categories = HashSet::new();
         let mut accounts = HashMap::new();
         for type_config in transaction_types {
             let categories = type_categories
@@ -75,14 +80,20 @@ impl Categorizer {
                 .map(Clone::clone)
                 .unwrap_or_default();
 
+            for category in categories.values() {
+                all_categories.insert((*category, type_config.income));
+            }
+
             let decoder = TransactionDecoder {
                 transaction_type: type_config.transaction_type,
                 name_source: type_config.name_source,
+                income: type_config.income,
                 categories,
             };
 
-            for account in type_config.accounts {
-                let account_rules: &mut AccountRules = accounts.entry(account).or_default();
+            for account in &type_config.accounts {
+                let account_rules: &mut AccountRules =
+                    accounts.entry(account.as_str()).or_default();
 
                 let existing = account_rules
                     .prefixes
@@ -105,7 +116,7 @@ impl Categorizer {
         })
     }
 
-    pub fn categories(&self) -> &HashSet<String> {
+    pub fn categories(&self) -> &HashSet<(&'static str, bool)> {
         &self.categories
     }
 
@@ -114,7 +125,7 @@ impl Categorizer {
         account: &str,
         name: &str,
         memo: Option<&str>,
-    ) -> Result<Option<&str>> {
+    ) -> Result<Option<CategorizationResult>> {
         let Some(account_rules) = self.accounts.get(account) else {
             return Ok(None);
         };
@@ -165,7 +176,10 @@ impl Categorizer {
             return Ok(None);
         };
 
-        Ok(Some(category))
+        Ok(Some(CategorizationResult {
+            income: decoder.income,
+            category,
+        }))
     }
 
     pub fn get_missing_stats(
@@ -175,9 +189,5 @@ impl Categorizer {
         &HashMap<MissingRuleInfo, usize>,
     ) {
         (&self.missing_prefix, &self.missing_rule)
-    }
-
-    pub fn uncategorized_seen(&self) -> bool {
-        self.missing_prefix.len() > 0 || self.missing_rule.len() > 0
     }
 }

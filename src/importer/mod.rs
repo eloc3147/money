@@ -97,9 +97,11 @@ pub async fn import_data(
                     continue;
                 }
 
-                let category = categorizer
-                    .categorize(&account.name, &transaction.name, transaction.memo)?
-                    .unwrap_or("Uncategorized");
+                let categorization_result =
+                    categorizer.categorize(&account.name, &transaction.name, transaction.memo)?;
+                let Some(categorization) = categorization_result else {
+                    continue;
+                };
 
                 if transaction.date_posted < first_date {
                     first_date = transaction.date_posted;
@@ -111,7 +113,8 @@ pub async fn import_data(
 
                 conn.add_transaction(
                     account_id,
-                    category,
+                    categorization.category,
+                    categorization.income,
                     transaction.transaction_type,
                     transaction.date_posted,
                     transaction.amount,
@@ -130,14 +133,8 @@ pub async fn import_data(
     spinner.set_message("Loading metadata");
 
     // Add categories
-    for category in categorizer.categories() {
-        conn.add_category(category).await?;
-    }
-
-    spinner.tick();
-
-    if categorizer.uncategorized_seen() {
-        conn.add_category("Uncategorized").await?;
+    for (category, income) in categorizer.categories() {
+        conn.add_category(category, *income).await?;
     }
 
     spinner.tick();
