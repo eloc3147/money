@@ -103,6 +103,10 @@ pub async fn import_data(
                     continue;
                 };
 
+                if categorization.ignore {
+                    continue;
+                }
+
                 if transaction.date_posted < first_date {
                     first_date = transaction.date_posted;
                 }

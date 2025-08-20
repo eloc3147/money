@@ -14,7 +14,7 @@ struct TransactionDecoder {
     transaction_type: UserTransactionType,
     name_source: NameSource,
     income: bool,
-    categories: HashMap<&'static str, &'static str>,
+    categories: HashMap<&'static str, PatternCategory>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -35,6 +35,7 @@ struct AccountRules {
 #[derive(Debug, Clone, Copy)]
 pub struct CategorizationResult {
     pub income: bool,
+    pub ignore: bool,
     pub category: &'static str,
 }
 
@@ -45,13 +46,21 @@ pub struct Categorizer {
     missing_rule: HashMap<MissingRuleInfo, usize>,
 }
 
+#[derive(Debug, Clone)]
+struct PatternCategory {
+    category: &'static str,
+    ignore: bool,
+}
+
 impl Categorizer {
     pub fn build(
         transaction_types: &'static [TransactionTypeConfig],
         rules: &'static [TransactionRuleConfig],
     ) -> Result<Self> {
-        let mut type_categories: HashMap<UserTransactionType, HashMap<&'static str, &'static str>> =
-            HashMap::new();
+        let mut type_categories: HashMap<
+            UserTransactionType,
+            HashMap<&'static str, PatternCategory>,
+        > = HashMap::new();
         for rule in rules {
             let entry = type_categories.entry(rule.transaction_type).or_default();
 
@@ -66,7 +75,10 @@ impl Categorizer {
                         );
                     }
                     Entry::Vacant(e) => {
-                        e.insert(rule.category.as_str());
+                        e.insert(PatternCategory {
+                            category: rule.category.as_str(),
+                            ignore: rule.ignore,
+                        });
                     }
                 }
             }
@@ -81,7 +93,9 @@ impl Categorizer {
                 .unwrap_or_default();
 
             for category in categories.values() {
-                all_categories.insert((*category, type_config.income));
+                if !category.ignore {
+                    all_categories.insert((category.category, type_config.income));
+                }
             }
 
             let decoder = TransactionDecoder {
@@ -178,7 +192,8 @@ impl Categorizer {
 
         Ok(Some(CategorizationResult {
             income: decoder.income,
-            category,
+            ignore: category.ignore,
+            category: category.category,
         }))
     }
 

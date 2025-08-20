@@ -51,6 +51,8 @@ pub struct TransactionTypeConfig {
 pub struct TransactionRuleConfig {
     pub transaction_type: UserTransactionType,
     pub category: String,
+    #[serde(default)]
+    pub ignore: bool,
     pub patterns: Vec<String>,
 }
 
