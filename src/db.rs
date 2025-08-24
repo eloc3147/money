@@ -60,6 +60,7 @@ pub async fn build() -> Result<SqlitePool> {
             account          INTEGER,
             base_category    TEXT NOT NULL,
             category         TEXT NOT NULL,
+            source_category  TEXT,
             income           INTEGER,
             transaction_type INTEGER,
             date_str         TEXT,
@@ -132,6 +133,7 @@ impl DbConnection {
         &mut self,
         account_id: i64,
         category: &str,
+        source_category: Option<&str>,
         income: bool,
         transaction_type: TransactionType,
         date_posted: NaiveDate,
@@ -147,6 +149,7 @@ impl DbConnection {
                 account,
                 base_category,
                 category,
+                source_category,
                 income,
                 transaction_type,
                 date_str,
@@ -164,12 +167,14 @@ impl DbConnection {
                 ?7,
                 ?8,
                 ?9,
-                ?10
+                ?10,
+                ?11
             );",
         )
         .bind(account_id)
         .bind(base_category)
         .bind(category)
+        .bind(source_category)
         .bind(income)
         .bind::<u8>(transaction_type.into())
         .bind(date_posted.to_string())

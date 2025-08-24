@@ -12,9 +12,9 @@ use csv::{Reader, StringRecord, StringRecordsIter};
 use crate::importer::{Transaction, TransactionType};
 
 pub struct CsvTransaction {
-    transaction_date: NaiveDate,
+    // transaction_date: NaiveDate,
     posted_date: NaiveDate,
-    card_number: u16,
+    // card_number: u16,
     description: String,
     category: String,
     debit: Option<f64>,
@@ -37,6 +37,7 @@ impl<'a> CsvTransaction {
             date_posted: self.posted_date,
             amount,
             transaction_id: None,
+            category: Some(Cow::Owned(self.category)),
             name: Cow::Owned(self.description),
             memo: None,
         })
@@ -109,10 +110,9 @@ impl<'a> CsvReader {
         }
 
         let columns = ColumnMap {
-            transaction_date_col: transaction_date_col
-                .ok_or_eyre("File missing transaction date column")?,
+            // transaction_date_col: transaction_date_col.ok_or_eyre("File missing transaction date column")?,
             posted_date_col: posted_date_col.ok_or_eyre("File missing posted date column")?,
-            card_number_col: card_number_col.ok_or_eyre("File missing card number column")?,
+            // card_number_col: card_number_col.ok_or_eyre("File missing card number column")?,
             description_col: description_col.ok_or_eyre("File missing description column")?,
             category_col: category_col.ok_or_eyre("File missing category column")?,
             debit_col: debit_col.ok_or_eyre("File missing debit column")?,
@@ -163,9 +163,9 @@ impl<'a> Iterator for CsvTransactionIter<'a> {
 }
 
 struct ColumnMap {
-    transaction_date_col: usize,
+    // transaction_date_col: usize,
     posted_date_col: usize,
-    card_number_col: usize,
+    // card_number_col: usize,
     description_col: usize,
     category_col: usize,
     debit_col: usize,
@@ -174,23 +174,23 @@ struct ColumnMap {
 
 impl ColumnMap {
     fn unpack_transaction(&self, record: StringRecord) -> Result<CsvTransaction> {
-        let transaction_date = record
-            .get(self.transaction_date_col)
-            .ok_or_eyre("Failed to get transaction_date column")
-            .and_then(|s| {
-                NaiveDate::parse_from_str(s, "%Y-%m-%d")
-                    .wrap_err("Failed to parse transaction_date")
-            })?;
+        // let transaction_date = record
+        //     .get(self.transaction_date_col)
+        //     .ok_or_eyre("Failed to get transaction_date column")
+        //     .and_then(|s| {
+        //         NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        //             .wrap_err("Failed to parse transaction_date")
+        //     })?;
         let posted_date = record
             .get(self.posted_date_col)
             .ok_or_eyre("Failed to get posted_date column")
             .and_then(|s| {
                 NaiveDate::parse_from_str(s, "%Y-%m-%d").wrap_err("Failed to parse posted_date")
             })?;
-        let card_number = record
-            .get(self.card_number_col)
-            .ok_or_eyre("Failed to get card_number column")
-            .and_then(|s| s.parse().wrap_err("Failed to parse card_number"))?;
+        // let card_number = record
+        //     .get(self.card_number_col)
+        //     .ok_or_eyre("Failed to get card_number column")
+        //     .and_then(|s| s.parse().wrap_err("Failed to parse card_number"))?;
         let description = record
             .get(self.description_col)
             .ok_or_eyre("Failed to get description column")
@@ -209,9 +209,9 @@ impl ColumnMap {
             .and_then(|s| parse_optional_float(s).wrap_err("Failed to parse credit"))?;
 
         Ok(CsvTransaction {
-            transaction_date,
+            // transaction_date,
             posted_date,
-            card_number,
+            // card_number,
             description,
             category,
             debit,

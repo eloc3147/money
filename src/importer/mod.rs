@@ -35,6 +35,7 @@ pub struct Transaction<'a> {
     pub date_posted: NaiveDate,
     pub amount: f64,
     pub transaction_id: Option<Cow<'a, str>>,
+    pub category: Option<Cow<'a, str>>,
     pub name: Cow<'a, str>,
     pub memo: Option<Cow<'a, str>>,
 }
@@ -130,6 +131,7 @@ pub async fn import_data(
                 conn.add_transaction(
                     account_id,
                     categorization.category,
+                    transaction.category.as_ref().map(|t| t.as_ref()),
                     categorization.income,
                     transaction.transaction_type,
                     transaction.date_posted,

@@ -678,17 +678,17 @@ pub enum Severity {
 pub struct StatementTransaction<'a> {
     transaction_type: QfxTransactionType,
     date_posted: DateTime<FixedOffset>,
-    user_date: Option<NaiveDateTime>,
+    // user_date: Option<NaiveDateTime>,
     amount: f64,
     transaction_id: &'a str,
     name: &'a str,
-    account_to: Option<AccountTo>,
+    // account_to: Option<AccountTo>,
     memo: Option<&'a str>,
 }
 
 #[derive(Debug)]
 pub struct AccountTo {
-    account_id: u32,
+    // account_id: u32,
 }
 
 #[derive(Debug)]
@@ -897,14 +897,16 @@ impl<'a> DocumentParser<'a> {
                     Some("MEMO") => {let check = self.get_value();self.memo.put_or_else("MEMO", check)?},
                     Some(key) => bail!("Unexpected key '{}' for state {:?}", key, self.state),
                     None => {
+                        let _ = self.user_date.take();
+                        let _ = self.account_to.take();
                         let transaction = StatementTransaction {
                             transaction_type: self.transaction_type.take().ok_or_eyre("Missing key 'TRNTYPE'")?,
                             date_posted: self.date_posted.take().ok_or_eyre("Missing key 'DTPOSTED'")?,
-                            user_date: self.user_date.take(),
+                            // user_date: self.user_date.take(),
                             amount: self.amount.take().ok_or_eyre("Missing key 'TRNAMT'")?,
                             transaction_id: self.transaction_id.take().ok_or_eyre("Missing key 'FITID'")?,
                             name: self.name.take().ok_or_eyre("Missing key 'NAME'")?,
-                            account_to: self.account_to.take(),
+                            // account_to: self.account_to.take(),
                             memo: self.memo.take(),
                         };
 
@@ -1052,9 +1054,8 @@ impl<'a> DocumentParser<'a> {
             }
         }
 
-        Ok(AccountTo {
-            account_id: account_id.ok_or_eyre("Missing key 'ACCTID'")?,
-        })
+        let _ = account_id.ok_or_eyre("Missing key 'ACCTID'")?;
+        Ok(AccountTo {})
     }
 
     fn get_key(&mut self) -> Result<&'a str> {
@@ -1232,6 +1233,7 @@ impl<'a> Iterator for QfxTransactionIter<'a> {
                     date_posted: date,
                     amount,
                     transaction_id: Some(Cow::Borrowed(transaction_id)),
+                    category: None,
                     name: Cow::Borrowed(name),
                     memo: memo.map(|m| Cow::Borrowed(m)),
                 }))
