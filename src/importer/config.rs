@@ -6,16 +6,13 @@ use color_eyre::Result;
 use color_eyre::eyre::Context;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
-pub struct AccountConfig {
-    pub name: String,
-    pub source_path: PathBuf,
-}
+use crate::importer::TransactionType;
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UserTransactionType {
     DebitPurchase,
     DebitRefund,
+    CreditPurchase,
     VisaDebitPurchase,
     VisaDebitRefund,
     SentEtransfer,
@@ -37,10 +34,28 @@ pub enum NameSource {
     NameSuffix,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TransactionTypeMode {
+    #[default]
+    Prefix,
+    SourceType,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AccountConfig {
+    pub name: String,
+    pub source_path: PathBuf,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TransactionTypeConfig {
+    #[serde(default)]
+    pub mode: TransactionTypeMode,
+    #[serde(default)]
+    pub prefix: Option<String>,
+    #[serde(default)]
+    pub source_type: Option<TransactionType>,
     pub transaction_type: UserTransactionType,
-    pub prefix: String,
     #[serde(default)]
     pub income: bool,
     pub name_source: NameSource,

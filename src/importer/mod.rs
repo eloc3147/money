@@ -6,15 +6,16 @@ mod qfx;
 
 use categorizer::Categorizer;
 use chrono::{Days, NaiveDate};
-use color_eyre::eyre::{Context, Result, eyre};
+use color_eyre::eyre::{Context, Result, bail, eyre};
 use config::AccountConfig;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use loader::Loader;
 use num_enum::IntoPrimitive;
+use serde::Deserialize;
 
 use crate::db::DbConnection;
 
-#[derive(Debug, IntoPrimitive)]
+#[derive(Debug, IntoPrimitive, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum TransactionType {
     Debit,
@@ -98,9 +99,17 @@ pub async fn import_data(
                     continue;
                 }
 
-                let categorization_result =
-                    categorizer.categorize(&account.name, &transaction.name, transaction.memo)?;
+                let categorization_result = categorizer.categorize(
+                    &account.name,
+                    &transaction.name,
+                    transaction.transaction_type,
+                    transaction.memo,
+                )?;
                 let Some(categorization) = categorization_result else {
+                    if transaction.name == "PAYMENT" {
+                        dbg!(file_path, account, transaction);
+                        bail!("E");
+                    }
                     continue;
                 };
 

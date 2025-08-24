@@ -22,11 +22,11 @@ fn print_uncategorized(categorizer: &Categorizer) {
         let count: usize = items.iter().map(|(_, c)| *c).sum();
 
         println!(
-            "\n{} transactions missing prefixes",
+            "\n{} transactions missing types",
             style(count).bright().yellow()
         );
 
-        println!("Most frequent transactions missing prefixes:");
+        println!("Most frequent transactions missing types:");
         for (info, count) in items.iter().take(20) {
             println!(
                 "{:22} | {:33}: {}",
@@ -46,27 +46,23 @@ fn print_uncategorized(categorizer: &Categorizer) {
         let count: usize = items.iter().map(|(_, c)| *c).sum();
 
         println!(
-            "\n{} transactions missing category rules",
+            "\n{} transactions missing categories",
             style(count).bright().yellow()
         );
 
-        println!("Most frequent transactions missing category rules:");
-        for (info, count) in items.iter().take(20) {
+        println!("Most frequent transactions missing categories:");
+        for (info, count) in items.iter().take(30) {
             println!(
                 "{:22} | {:40}: {}",
-                style(
-                    info.transaction_type
-                        .map(|t| format!("{:?}", t))
-                        .unwrap_or_else(|| String::new())
-                )
-                .bright()
-                .white()
-                .bold(),
+                style(format!("{:?}", info.transaction_type))
+                    .bright()
+                    .white()
+                    .bold(),
                 style(&info.display).bright().white().bold(),
                 style(count).bright().cyan()
             );
         }
-        if items.len() > 20 {
+        if items.len() > 30 {
             println!("{}", style("...").bright().white());
         }
     }

@@ -5,8 +5,10 @@ use color_eyre::Result;
 use color_eyre::eyre::{OptionExt, bail};
 use patricia_tree::GenericPatriciaMap;
 
+use crate::importer::TransactionType;
 use crate::importer::config::{
-    NameSource, TransactionRuleConfig, TransactionTypeConfig, UserTransactionType,
+    NameSource, TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode,
+    UserTransactionType,
 };
 
 #[derive(Debug, Clone)]
@@ -18,18 +20,17 @@ struct TransactionDecoder {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct MissingRuleInfo {
+pub struct MissingTypeInfo {
     pub account: String,
-    pub prefix: String,
-    pub transaction_type: Option<UserTransactionType>,
-    pub display: String,
+    pub source_type: TransactionType,
     pub name: String,
-    pub memo: String,
 }
 
-#[derive(Debug, Default)]
-struct AccountRules {
-    prefixes: GenericPatriciaMap<String, TransactionDecoder>,
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct MissingRuleInfo {
+    pub account: String,
+    pub transaction_type: UserTransactionType,
+    pub display: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,10 +41,18 @@ pub struct CategorizationResult {
 }
 
 pub struct Categorizer {
-    accounts: HashMap<&'static str, AccountRules>,
+    /// Mapping of account_name to a mapping between name prefixes and decoders
+    /// `{account_name: {prefix: decoder}}`
+    prefix_map: HashMap<&'static str, GenericPatriciaMap<String, TransactionDecoder>>,
+    /// Mapping of account_name to a mapping between transaction types and decoders
+    /// `{account_name: {transaction_type: decoder}}`
+    source_type_map: HashMap<&'static str, HashMap<TransactionType, TransactionDecoder>>,
+    /// All categories, and whether they are income (true) or expenses (false)
     categories: HashSet<(&'static str, bool)>,
-    missing_prefix: HashMap<MissingRuleInfo, usize>,
-    missing_rule: HashMap<MissingRuleInfo, usize>,
+    /// Count of transactions that could not find a transaction type
+    unknown_type_counts: HashMap<MissingTypeInfo, usize>,
+    /// Count of transactions that could not find a category
+    unknown_category_counts: HashMap<MissingRuleInfo, usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,8 +93,9 @@ impl Categorizer {
             }
         }
 
-        let mut all_categories = HashSet::new();
-        let mut accounts = HashMap::new();
+        let mut used_categories = HashSet::new();
+        let mut prefix_map = HashMap::new();
+        let mut source_type_map = HashMap::new();
         for type_config in transaction_types {
             let categories = type_categories
                 .get(&type_config.transaction_type)
@@ -94,7 +104,7 @@ impl Categorizer {
 
             for category in categories.values() {
                 if !category.ignore {
-                    all_categories.insert((category.category, type_config.income));
+                    used_categories.insert((category.category, type_config.income));
                 }
             }
 
@@ -105,28 +115,51 @@ impl Categorizer {
                 categories,
             };
 
-            for account in &type_config.accounts {
-                let account_rules: &mut AccountRules =
-                    accounts.entry(account.as_str()).or_default();
+            match type_config.mode {
+                TransactionTypeMode::Prefix => {
+                    let prefix = type_config
+                        .prefix
+                        .as_ref()
+                        .ok_or_eyre("prefix required in Prefix mode")?;
 
-                let existing = account_rules
-                    .prefixes
-                    .insert(type_config.prefix.clone(), decoder.clone());
+                    for account in &type_config.accounts {
+                        let account_prefixes: &mut GenericPatriciaMap<String, TransactionDecoder> =
+                            prefix_map.entry(account.as_str()).or_default();
 
-                if existing.is_some() {
-                    bail!(
-                        "Multiple transaction types use the prefix \"{}\"",
-                        type_config.prefix
-                    );
+                        if account_prefixes
+                            .insert(prefix.clone(), decoder.clone())
+                            .is_some()
+                        {
+                            bail!("Multiple transaction types use the prefix \"{}\"", prefix);
+                        }
+                    }
+                }
+                TransactionTypeMode::SourceType => {
+                    let source_type = type_config
+                        .source_type
+                        .ok_or_eyre("source_type required in SourceType mode")?;
+
+                    for account in &type_config.accounts {
+                        let account_types: &mut HashMap<TransactionType, TransactionDecoder> =
+                            source_type_map.entry(account.as_str()).or_default();
+
+                        if account_types.insert(source_type, decoder.clone()).is_some() {
+                            bail!(
+                                "Multiple transaction types use the source transaction type {:?}",
+                                source_type
+                            );
+                        }
+                    }
                 }
             }
         }
 
         Ok(Self {
-            accounts,
-            categories: all_categories,
-            missing_prefix: HashMap::new(),
-            missing_rule: HashMap::new(),
+            prefix_map,
+            source_type_map,
+            categories: used_categories,
+            unknown_type_counts: HashMap::new(),
+            unknown_category_counts: HashMap::new(),
         })
     }
 
@@ -138,27 +171,40 @@ impl Categorizer {
         &mut self,
         account: &str,
         name: &str,
+        transaction_tye: TransactionType,
         memo: Option<&str>,
     ) -> Result<Option<CategorizationResult>> {
-        let Some(account_rules) = self.accounts.get(account) else {
-            return Ok(None);
-        };
+        let prefix_match = self
+            .prefix_map
+            .get(account)
+            .and_then(|prefixes| prefixes.get_longest_common_prefix(name));
 
-        let Some((prefix, decoder)) = account_rules.prefixes.get_longest_common_prefix(name) else {
-            let count = self
-                .missing_prefix
-                .entry(MissingRuleInfo {
-                    account: account.to_string(),
-                    prefix: String::new(),
-                    display: String::new(),
-                    transaction_type: None,
-                    name: name.to_string(),
-                    memo: memo.unwrap_or_default().to_string(),
-                })
-                .or_default();
+        let type_match = self
+            .source_type_map
+            .get(account)
+            .and_then(|types| types.get(&transaction_tye));
 
-            *count += 1;
-            return Ok(None);
+        let mut matched_prefix = None;
+        let decoder = match (prefix_match, type_match) {
+            (Some((p, d)), None) => {
+                matched_prefix = Some(p);
+                d
+            }
+            (None, Some(d)) => d,
+            (Some(_), Some(_)) => bail!("todo"),
+            (None, None) => {
+                let count = self
+                    .unknown_type_counts
+                    .entry(MissingTypeInfo {
+                        account: account.to_string(),
+                        source_type: transaction_tye,
+                        name: name.to_string(),
+                    })
+                    .or_default();
+
+                *count += 1;
+                return Ok(None);
+            }
         };
 
         let mut display_name = match decoder.name_source {
@@ -168,25 +214,26 @@ impl Categorizer {
             },
             NameSource::Name => name,
             NameSource::NameSuffix => name
-                .strip_prefix(prefix)
+                .strip_prefix(
+                    matched_prefix
+                        .ok_or_eyre("NameSuffix name source cannot be used in SourceType mode")?,
+                )
                 .ok_or_eyre("Name does not contain selected prefix")?,
         };
         display_name = display_name.trim();
 
         let Some(category) = decoder.categories.get(display_name) else {
             let count = self
-                .missing_rule
+                .unknown_category_counts
                 .entry(MissingRuleInfo {
                     account: account.to_string(),
-                    prefix: prefix.to_string(),
-                    transaction_type: Some(decoder.transaction_type),
+                    transaction_type: decoder.transaction_type,
                     display: display_name.to_string(),
-                    name: name.to_string(),
-                    memo: memo.unwrap_or_default().to_string(),
                 })
                 .or_default();
 
             *count += 1;
+
             return Ok(None);
         };
 
@@ -200,9 +247,9 @@ impl Categorizer {
     pub fn get_missing_stats(
         &self,
     ) -> (
-        &HashMap<MissingRuleInfo, usize>,
+        &HashMap<MissingTypeInfo, usize>,
         &HashMap<MissingRuleInfo, usize>,
     ) {
-        (&self.missing_prefix, &self.missing_rule)
+        (&self.unknown_type_counts, &self.unknown_category_counts)
     }
 }
