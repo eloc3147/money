@@ -61,6 +61,7 @@ pub async fn import_data(
         account_spinner.set_style(ProgressStyle::default_spinner());
         account_spinner.tick();
 
+        loader.clear();
         loader.add_dir(&account.source_path).wrap_err_with(|| {
             format!(
                 "Error searching account dir: {}",

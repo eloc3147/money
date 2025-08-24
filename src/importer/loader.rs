@@ -35,6 +35,36 @@ impl Loader {
         Ok(())
     }
 
+    pub fn open_next_file(&mut self) -> Result<Option<(PathBuf, TransactionReader)>> {
+        let Some(file_path) = self.next_file()? else {
+            return Ok(None);
+        };
+
+        let ext = file_path
+            .extension()
+            .ok_or_else(|| eyre!("File missing extension: {:?}", file_path))?
+            .to_ascii_lowercase();
+
+        match &*ext.to_string_lossy() {
+            "qfx" => {
+                let reader = qfx::QfxReader::open(&file_path).wrap_err_with(|| {
+                    format!("Failed to read file: {}", file_path.to_string_lossy())
+                })?;
+
+                Ok(Some((file_path, TransactionReader::QfxReader(reader))))
+            }
+            "csv" => {
+                // println!("CSV exit early");
+                Ok(None)
+            }
+            ext => Err(eyre!("Unrecognized file type: {}", ext)),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.search_stack.clear();
+    }
+
     fn next_file(&mut self) -> Result<Option<PathBuf>> {
         loop {
             let Some(dir_iter) = self.search_stack.last_mut() else {
@@ -67,32 +97,6 @@ impl Loader {
                     // Continue loop
                 }
             }
-        }
-    }
-
-    pub fn open_next_file(&mut self) -> Result<Option<(PathBuf, TransactionReader)>> {
-        let Some(file_path) = self.next_file()? else {
-            return Ok(None);
-        };
-
-        let ext = file_path
-            .extension()
-            .ok_or_else(|| eyre!("File missing extension: {:?}", file_path))?
-            .to_ascii_lowercase();
-
-        match &*ext.to_string_lossy() {
-            "qfx" => {
-                let reader = qfx::QfxReader::open(&file_path).wrap_err_with(|| {
-                    format!("Failed to read file: {}", file_path.to_string_lossy())
-                })?;
-
-                Ok(Some((file_path, TransactionReader::QfxReader(reader))))
-            }
-            "csv" => {
-                // println!("CSV exit early");
-                Ok(None)
-            }
-            ext => Err(eyre!("Unrecognized file type: {}", ext)),
         }
     }
 }
