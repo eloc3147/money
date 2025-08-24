@@ -42,7 +42,11 @@ fn print_uncategorized(categorizer: &Categorizer) {
 
     if missing_rule.len() > 0 {
         let mut items = Vec::from_iter(missing_rule);
-        items.sort_by(|a, b| a.1.cmp(&b.1).reverse());
+        items.sort_by(|a, b| {
+            (a.0.transaction_type, *a.1)
+                .cmp(&(b.0.transaction_type, *b.1))
+                .reverse()
+        });
         let count: usize = items.iter().map(|(_, c)| *c).sum();
 
         println!(

@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::importer::TransactionType;
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum UserTransactionType {
     DebitPurchase,
     DebitRefund,
