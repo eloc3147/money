@@ -64,7 +64,7 @@ pub async fn build() -> Result<SqlitePool> {
             transaction_type INTEGER,
             date_str         TEXT,
             amount           REAL,
-            transaction_id   INTEGER,
+            transaction_id   TEXT,
             name             TEXT NOT NULL,
             memo             TEXT
         );",
@@ -136,7 +136,7 @@ impl DbConnection {
         transaction_type: TransactionType,
         date_posted: NaiveDate,
         amount: f64,
-        transaction_id: &str,
+        transaction_id: Option<&str>,
         name: &str,
         memo: Option<&str>,
     ) -> Result<()> {

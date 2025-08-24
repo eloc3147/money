@@ -2,11 +2,14 @@ pub mod config;
 pub mod loader;
 
 pub mod categorizer;
-mod qfx;
+mod csv_file;
+mod qfx_file;
+
+use std::borrow::Cow;
 
 use categorizer::Categorizer;
 use chrono::{Days, NaiveDate};
-use color_eyre::eyre::{Context, Result, bail, eyre};
+use color_eyre::eyre::{Context, Result, eyre};
 use config::AccountConfig;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use loader::Loader;
@@ -31,9 +34,9 @@ pub struct Transaction<'a> {
     pub transaction_type: TransactionType,
     pub date_posted: NaiveDate,
     pub amount: f64,
-    pub transaction_id: &'a str,
-    pub name: &'a str,
-    pub memo: Option<&'a str>,
+    pub transaction_id: Option<Cow<'a, str>>,
+    pub name: Cow<'a, str>,
+    pub memo: Option<Cow<'a, str>>,
 }
 
 pub async fn import_data(
@@ -77,7 +80,7 @@ pub async fn import_data(
             )
         })?;
         loop {
-            let Some((file_path, reader)) = loader
+            let Some((file_path, mut reader)) = loader
                 .open_next_file()
                 .wrap_err("Error opening account file")?
             else {
@@ -94,7 +97,10 @@ pub async fn import_data(
             for transaction in transactions {
                 let transaction = transaction?;
 
-                if transaction.amount == 0.0 && transaction.transaction_id.contains('.') {
+                if let Some(tid) = transaction.transaction_id.as_ref()
+                    && tid.contains(".")
+                    && transaction.amount == 0.0
+                {
                     // Weird multiline transaction. Extra lines don't contain much useful information
                     continue;
                 }
@@ -103,13 +109,9 @@ pub async fn import_data(
                     &account.name,
                     &transaction.name,
                     transaction.transaction_type,
-                    transaction.memo,
+                    transaction.memo.as_ref().map(|m| m.as_ref()),
                 )?;
                 let Some(categorization) = categorization_result else {
-                    if transaction.name == "PAYMENT" {
-                        dbg!(file_path, account, transaction);
-                        bail!("E");
-                    }
                     continue;
                 };
 
@@ -132,9 +134,9 @@ pub async fn import_data(
                     transaction.transaction_type,
                     transaction.date_posted,
                     transaction.amount,
-                    transaction.transaction_id,
-                    transaction.name,
-                    transaction.memo,
+                    transaction.transaction_id.as_ref().map(|t| t.as_ref()),
+                    transaction.name.as_ref(),
+                    transaction.memo.as_ref().map(|m| m.as_ref()),
                 )
                 .await?;
             }

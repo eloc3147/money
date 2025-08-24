@@ -208,10 +208,9 @@ impl Categorizer {
         };
 
         let mut display_name = match decoder.name_source {
-            NameSource::Memo => match memo {
-                Some(m) => m,
-                None => bail!("Missing memo for transaction using memo as the name source"),
-            },
+            NameSource::Memo => {
+                memo.ok_or_eyre("Missing memo for transaction using memo as the name source")?
+            }
             NameSource::Name => name,
             NameSource::NameSuffix => name
                 .strip_prefix(

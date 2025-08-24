@@ -96,9 +96,11 @@ impl<'a> QfxReader {
         Ok(Self { contents, is_xml })
     }
 
-    pub fn read(&'a self) -> Result<impl Iterator<Item = Result<Transaction<'a>>>> {
+    pub fn read(&'a self) -> Result<QfxTransactionIter<'a>> {
         let lexer = Lexer::new(self.contents.borrow_dependent(), self.is_xml);
-        Ok(DocumentParser::new(lexer))
+        let parser = DocumentParser::new(lexer);
+
+        Ok(QfxTransactionIter { parser })
     }
 }
 
@@ -1197,11 +1199,15 @@ impl<'a> DocumentParser<'a> {
     }
 }
 
-impl<'a> Iterator for DocumentParser<'a> {
+pub struct QfxTransactionIter<'a> {
+    parser: DocumentParser<'a>,
+}
+
+impl<'a> Iterator for QfxTransactionIter<'a> {
     type Item = Result<Transaction<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.next_transaction() {
+        match self.parser.next_transaction() {
             Ok(Some(StatementTransaction {
                 transaction_type,
                 date_posted,
@@ -1225,9 +1231,9 @@ impl<'a> Iterator for DocumentParser<'a> {
                     transaction_type: file_transaction_type,
                     date_posted: date,
                     amount,
-                    transaction_id,
-                    name,
-                    memo,
+                    transaction_id: Some(Cow::Borrowed(transaction_id)),
+                    name: Cow::Borrowed(name),
+                    memo: memo.map(|m| Cow::Borrowed(m)),
                 }))
             }
             Ok(None) => None,
