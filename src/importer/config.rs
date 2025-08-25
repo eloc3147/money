@@ -13,6 +13,7 @@ pub enum UserTransactionType {
     DebitPurchase,
     DebitRefund,
     CreditPurchase,
+    CreditRefund,
     VisaDebitPurchase,
     VisaDebitRefund,
     SentEtransfer,
