@@ -1,6 +1,6 @@
 import { TransactionsResponse, loadExpenses, loadIncome } from "./api";
 import { el, setChildren } from "redom";
-import { Plot } from "./plot";
+import { DataPane } from "./data_pane";
 
 
 enum Page {
@@ -38,15 +38,15 @@ class PageContents {
     selected: Page;
     loaded: Page | null;
 
-    plot: Plot;
+    dataPane: DataPane;
     el: HTMLElement;
 
     constructor() {
         this.selected = Page.Expenses;
         this.loaded = null;
 
-        this.plot = new Plot();
-        this.el = el("main.container-fluid", this.plot);
+        this.dataPane = new DataPane();
+        this.el = el("main.container-fluid", this.dataPane);
     }
 
     async onmount() {
@@ -78,8 +78,7 @@ class PageContents {
         }
 
         this.loaded = this.selected;
-        this.plot.setTransactions(transactions);
-        this.plot.updatePlot();
+        this.dataPane.setTransactions(transactions);
     }
 }
 

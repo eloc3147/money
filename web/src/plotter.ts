@@ -1,6 +1,5 @@
 import * as d3 from "d3";
 import { Coordinate, StackData, StackRow, stack } from "./stack_area";
-import { el, setChildren } from "redom";
 import { Timer } from "./timer";
 import { TransactionsResponse } from "./api";
 
@@ -37,7 +36,7 @@ interface BoxCoords {
     bottom: number;
 }
 
-interface ContainerCoords {
+export interface ContainerCoords {
     width: number;
     height: number;
     margin: BoxCoords;
@@ -227,9 +226,9 @@ class Plotter {
 
     drawLegend(categories: string[], colorMap: Map<number, string>) {
         // Add one square in the legend for each name.
-        const categoriesRev = categories.reverse(), itemSize = 20;
+        const itemSize = 20;
         this.svg.selectAll("none")
-            .data(categoriesRev)
+            .data(categories)
             .join("rect")
             .attr("x", this.width + 20)
             .attr("y", (_category: string, idx: number) => 10 + idx * (itemSize + 5))
@@ -237,20 +236,20 @@ class Plotter {
             .attr("height", itemSize)
             .style(
                 "fill",
-                (_category: string, idx: number) => colorMap.get(categoriesRev.length - idx - 1) as string
+                (_category: string, idx: number) => colorMap.get(categories.length - idx - 1) as string
             )
             .on("mouseover", highlightHandler)
             .on("mouseleave", unhighlightHandler);
 
         // Add one dot in the legend for each name.
         this.svg.selectAll("none")
-            .data(categoriesRev)
+            .data(categories)
             .join("text")
             .attr("x", this.width + 20 + itemSize * 1.2)
             .attr("y", (_category: string, idx: number) => 10 + idx * (itemSize + 5) + 17)
             .style(
                 "fill",
-                (_category: string, idx: number) => colorMap.get(categoriesRev.length - idx - 1) as string
+                (_category: string, idx: number) => colorMap.get(categories.length - idx - 1) as string
             )
             .text((category: string) => category)
             .attr("text-anchor", "left")
@@ -264,106 +263,50 @@ class Plotter {
     }
 }
 
-export class Plot {
-    drawn: boolean;
+export function plot(
+    transactions: TransactionsResponse,
+    containerCoords: ContainerCoords
+): SVGGElement {
+    const width = containerCoords.width - containerCoords.margin.left - containerCoords.margin.right;
+    const height = containerCoords.height - containerCoords.margin.top - containerCoords.margin.bottom;
 
-    containerCoords: ContainerCoords;
-    width: number;
-    height: number;
+    const stackedData = stack(transactions.categories, transactions.amounts);
+    const maxHeight = Math.max(...stackedData.map(row => Math.max(...row.map(coord => coord[1]))))
 
-    transactions: TransactionsResponse | null;
-    stackedData: StackData | null;
-    maxHeight: number;
-    colorMap: Map<number, string>;
-
-    el: HTMLDivElement;
-
-    constructor() {
-        this.drawn = false;
-
-        this.containerCoords = {
-            width: 1920,
-            height: 720,
-            margin: { left: 50, right: 160, top: 60, bottom: 50 },
-        };
-        this.width = this.containerCoords.width - this.containerCoords.margin.left - this.containerCoords.margin.right;
-        this.height = this.containerCoords.height - this.containerCoords.margin.top - this.containerCoords.margin.bottom;
-
-        this.transactions = null;
-        this.stackedData = null;
-        this.maxHeight = 0;
-        this.colorMap = new Map();
-
-        this.el = el("div", { "aria-busy": true });
+    const categoryCount = transactions.categories.length;
+    if (categoryCount > PALATE.length) {
+        console.warn(`Fewer color palate options (${PALATE.length}) than data categories (${categoryCount})`);
+        // Throw new Error(`Fewer color palate options (${PALATE.length}) than data categories (${category_count})`);
     }
 
-    onmount() {
-        this.updatePlot();
+    const colorMap = new Map();
+    for (let idx = 0; idx < categoryCount; idx += 1) {
+        colorMap.set(idx, PALATE[idx % PALATE.length] as string);
     }
 
-    setTransactions(transactions: TransactionsResponse) {
-        this.transactions = transactions;
-        this.drawn = false;
-    }
+    const xScale = d3.scaleTime()
+        .domain([transactions.dates[0] as Date, transactions.dates[transactions.dates.length - 1] as Date])
+        .range([0, width]);
 
-    updatePlot() {
-        if (this.drawn) {
-            return;
-        }
+    const yScale = d3.scaleLinear()
+        .domain([0, maxHeight])
+        .range([height, 0]);
 
-        if (this.transactions ===  null) {
-            throw new Error("Transactions must be set before updating plot");
-        }
+    const plotter = new Plotter(
+        xScale,
+        yScale,
+        width,
+        height,
+        containerCoords.width,
+        containerCoords.height,
+    );
 
-        this.stackedData = stack(this.transactions.categories, this.transactions.amounts);
-        this.maxHeight = Math.max(...this.stackedData.map(row => Math.max(...row.map(coord => coord[1]))))
+    const xAxis = plotter.drawAxis();
+    plotter.drawClipping();
 
-        const categoryCount = this.transactions.categories.length;
-        if (categoryCount > PALATE.length) {
-            console.warn(`Fewer color palate options (${PALATE.length}) than data categories (${categoryCount})`);
-            // Throw new Error(`Fewer color palate options (${PALATE.length}) than data categories (${category_count})`);
-        }
+    const [areaContainer, area] = plotter.drawArea(transactions.dates, stackedData, colorMap);
+    plotter.drawSelector(transactions.dates, xAxis, areaContainer, area);
+    plotter.drawLegend(transactions.categories, colorMap);
 
-        for (let idx = 0; idx < categoryCount; idx += 1) {
-            this.colorMap.set(idx, PALATE[idx % PALATE.length] as string);
-        }
-
-        setChildren(this.el, [this.draw()]);
-        this.el.removeAttribute("aria-busy");
-    }
-
-    draw(): SVGSVGElement {
-        if (this.transactions === null || this.stackedData === null) {
-            throw new Error("Data must be loaded before drawing");
-        }
-
-        const xScale = d3.scaleTime()
-            .domain([this.transactions.dates[0] as Date, this.transactions.dates[this.transactions.dates.length - 1] as Date])
-            .range([0, this.width]);
-
-        const yScale = d3.scaleLinear()
-            .domain([0, this.maxHeight])
-            .range([this.height, 0]);
-
-        const plotter = new Plotter(
-            xScale,
-            yScale,
-            this.width,
-            this.height,
-            this.containerCoords.width,
-            this.containerCoords.height,
-        );
-
-        const xAxis = plotter.drawAxis();
-
-        plotter.drawClipping();
-
-        const [areaContainer, area] = plotter.drawArea(this.transactions.dates, this.stackedData, this.colorMap);
-
-        plotter.drawSelector(this.transactions.dates, xAxis, areaContainer, area);
-
-        plotter.drawLegend(this.transactions.categories, this.colorMap);
-
-        return plotter.build();
-    }
+    return plotter.build();
 }

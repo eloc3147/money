@@ -29,6 +29,7 @@
         "OFXHEADER",
         "OFXSGML",
         "OLDFILEUID",
+        "redom",
         "serde",
         "SIGNONMSGSRSV1",
         "SONRS",
