@@ -4,28 +4,24 @@ import { el, setChildren } from "redom";
 import { Timer } from "./timer";
 import { TransactionsResponse } from "./api";
 
+// Sources from: https://python-graph-gallery.com/color-palette-finder/?palette=signac
 const PALATE = [
-    // "#c52f21", // Red;
-    "#d92662", // Pink;
-    // "#c1208b", // Fuchsia;
-    "#9236a4", // Purple;
-    // "#7540bf", // Violet;
-    "#524ed2", // Indigo;
-    // "#2060df", // Blue;
-    "#0172ad", // Azure;
-    // "#047878", // Cyan;
-    "#007a50", // Jade;
-    // "#398712", // Green;
-    "#a5d601", // Lime;
-    // "#f2df0d", // Yellow;
-    "#ffbf00", // Amber;
-    "#ff9500", // Pumpkin;
-    // "#d24317", // Orange;
-    // "#ccc6b4", // Sand;
-    "#ababab", // Grey;
-    // "#646b79", // Zinc;
-    "#525f7a", // Slate;
-];
+    "#FBE183FF",
+    "#F4C40FFF",
+    "#FE9B00FF",
+    "#D8443CFF",
+    "#9B3441FF",
+    "#DE597CFF",
+    "#E87B89FF",
+    "#E6A2A6FF",
+    "#AA7AA1FF",
+    "#9F5691FF",
+    "#633372FF",
+    "#1F6E9CFF",
+    "#2B9B81FF",
+    "#92C051FF"
+]
+
 const HIGHLIGHT_OPACITY = 0.1;
 const HIGHLIGHT_DEBOUNCE_DELAY = 350;
 
