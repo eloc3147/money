@@ -263,40 +263,57 @@ class Plotter {
     }
 }
 
+class PlotData {
+    width: number;
+    height: number;
+
+    stackedData: StackData;
+    maxHeight: number;
+    colorMap: Map<number, string>;
+
+    constructor(
+    transactions: TransactionsResponse,
+    containerCoords: ContainerCoords
+    ) {
+        this.width = containerCoords.width - containerCoords.margin.left - containerCoords.margin.right;
+        this.height = containerCoords.height - containerCoords.margin.top - containerCoords.margin.bottom;
+
+        this.stackedData = stack(transactions.categories, transactions.amounts);
+        this.maxHeight = Math.max(...this.stackedData.map(row => Math.max(...row.map(coord => coord[1]))))
+
+        const categoryCount = transactions.categories.length;
+        if (categoryCount > PALATE.length) {
+            console.warn(`Fewer color palate options (${PALATE.length}) than data categories (${categoryCount})`);
+            // Throw new Error(`Fewer color palate options (${PALATE.length}) than data categories (${category_count})`);
+        }
+
+        this.colorMap = new Map();
+        for (let idx = 0; idx < categoryCount; idx += 1) {
+            this.colorMap.set(idx, PALATE[idx % PALATE.length] as string);
+        }
+    }
+}
+
+
 export function plot(
     transactions: TransactionsResponse,
     containerCoords: ContainerCoords
 ): SVGGElement {
-    const width = containerCoords.width - containerCoords.margin.left - containerCoords.margin.right;
-    const height = containerCoords.height - containerCoords.margin.top - containerCoords.margin.bottom;
-
-    const stackedData = stack(transactions.categories, transactions.amounts);
-    const maxHeight = Math.max(...stackedData.map(row => Math.max(...row.map(coord => coord[1]))))
-
-    const categoryCount = transactions.categories.length;
-    if (categoryCount > PALATE.length) {
-        console.warn(`Fewer color palate options (${PALATE.length}) than data categories (${categoryCount})`);
-        // Throw new Error(`Fewer color palate options (${PALATE.length}) than data categories (${category_count})`);
-    }
-
-    const colorMap = new Map();
-    for (let idx = 0; idx < categoryCount; idx += 1) {
-        colorMap.set(idx, PALATE[idx % PALATE.length] as string);
-    }
+    const data = new PlotData(transactions, containerCoords);
 
     const xScale = d3.scaleTime()
         .domain([transactions.dates[0] as Date, transactions.dates[transactions.dates.length - 1] as Date])
-        .range([0, width]);
+        .range([0, data.width]);
 
     const yScale = d3.scaleLinear()
-        .domain([0, maxHeight])
-        .range([height, 0]);
+        .domain([0, data.maxHeight])
+        .range([data.height, 0]);
 
     const plotter = new Plotter(
         xScale,
         yScale,
-        width,
-        height,
+        data.width,
+        data.height,
         containerCoords.width,
         containerCoords.height,
     );
@@ -304,9 +321,9 @@ export function plot(
     const xAxis = plotter.drawAxis();
     plotter.drawClipping();
 
-    const [areaContainer, area] = plotter.drawArea(transactions.dates, stackedData, colorMap);
+    const [areaContainer, area] = plotter.drawArea(transactions.dates, data.stackedData, data.colorMap);
     plotter.drawSelector(transactions.dates, xAxis, areaContainer, area);
-    plotter.drawLegend(transactions.categories, colorMap);
+    plotter.drawLegend(transactions.categories, data.colorMap);
 
     return plotter.build();
 }
