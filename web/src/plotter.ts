@@ -36,7 +36,7 @@ const LEGEND_Y_OFFSET = 10;
 const LEGEND_TEXT_Y_OFFSET = 17;
 const LEGEND_GAP = 5;
 
-type AnySelection<T extends d3.BaseType> = d3.Selection<T, any, any, any>
+type AnySelection<T extends d3.BaseType> = d3.Selection<T, any, any, any>;
 
 type SvgElement = AnySelection<SVGSVGElement>;
 type GElement = AnySelection<SVGGElement>;
