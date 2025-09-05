@@ -29,8 +29,8 @@ export default defineConfig([
       ],
       "max-lines": ["error", 500],
       "max-params": ["warn", 8],
+      "max-lines-per-function": ["warn", 75],
       "no-warning-comments": "warn",
-      "max-lines-per-function": "warn",
       "@typescript-eslint/no-explicit-any": "off",
       "no-unused-vars": "off",
       "max-classes-per-file": "off",
@@ -39,6 +39,7 @@ export default defineConfig([
       "prefer-destructuring": "off",
       "sort-keys": "off",
       "init-declarations": "off"
+      // "max-statements": "off"
     }
   }
 ]);

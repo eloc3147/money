@@ -1,12 +1,9 @@
-import { ContainerCoords, plot } from "./plotter";
 import { el, setChildren } from "redom";
 import { TransactionsResponse } from "./api";
+import { plot } from "./plotter";
 
-const CONTAINER_COORDS: ContainerCoords = {
-    width: 1920,
-    height: 720,
-    margin: { left: 50, right: 160, top: 60, bottom: 50 },
-};
+const PLOT_WIDTH = 1920;
+const PLOT_HEIGHT = 720;
 
 class Plot {
     drawn: boolean;
@@ -37,7 +34,8 @@ class Plot {
 
         const plotElement = plot(
             this.transactions,
-            CONTAINER_COORDS
+            PLOT_WIDTH,
+            PLOT_HEIGHT
         );
 
         setChildren(this.el, [plotElement]);
