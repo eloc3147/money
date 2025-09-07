@@ -54,7 +54,7 @@ function highlightHandler(_event: MouseEvent, data: string): void {
     d3.selectAll(".area-trace").style("opacity", HIGHLIGHT_OPACITY);
 
     // Expect the one that is hovered
-    d3.select(`.trace${data}`).style("opacity", 1);
+    d3.select(`.trace-${data}`).style("opacity", 1);
 }
 
 function unhighlightHandler(_event: MouseEvent): void {
@@ -157,7 +157,7 @@ function drawPlotArea(
         .selectAll("none")
         .data(stackedData)
         .join("path")
-        .attr("class", (row: StackRow) => `area-trace trace${row.key}`)
+        .attr("class", (row: StackRow) => `area-trace trace-${row.key}`)
         .style("fill", (row: StackRow) => colorMap.get(row.index) as string)
         .attr("d", area);
 
@@ -189,9 +189,11 @@ function drawLegend(
     colorMap: ColorMap,
     startX: number,
 ): void {
+    let reversed = categories.toReversed();
+
     // Add one square in the legend for each name
     svg.selectAll("none")
-        .data(categories)
+        .data(reversed)
         .join("rect")
         .attr("x", startX + LEGEND_TICK_SIZE)
         .attr("y", (_category: string, idx: number) => LEGEND_Y_OFFSET + idx * (LEGEND_TICK_SIZE + LEGEND_GAP))
@@ -206,7 +208,7 @@ function drawLegend(
 
     // Add one dot in the legend for each name.
     svg.selectAll("none")
-        .data(categories)
+        .data(reversed)
         .join("text")
         .attr("x", startX + LEGEND_TICK_SIZE + LEGEND_TICK_SIZE + LEGEND_GAP)
         .attr("y", (_category: string, idx: number) => LEGEND_Y_OFFSET + LEGEND_TEXT_Y_OFFSET + idx * (LEGEND_TICK_SIZE + LEGEND_GAP))
