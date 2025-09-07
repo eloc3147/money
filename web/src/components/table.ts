@@ -4,8 +4,8 @@ import { TransactionsResponse } from "../api";
 class HeaderCell implements RedomComponent {
     el: HTMLTableCellElement;
 
-    constructor() {
-        this.el = el("th", { "scope": "col" });
+    constructor(data = "") {
+        this.el = el("th", data, { scope: "col" });
     }
 
     update(data: string): void {
@@ -38,43 +38,45 @@ class DataRow implements RedomComponent {
 }
 
 export class Table implements RedomComponent {
+    headerColRows: List;
     headerRow: List;
     bodyRows: List;
-    el: HTMLTableElement;
+    el: HTMLDivElement;
 
     constructor() {
+        this.headerColRows = list("tbody", DataRow);
         this.headerRow = list("tr", HeaderCell);
         this.bodyRows = list("tbody", DataRow);
-        this.el = el("table", [
-            el("thead", this.headerRow),
-            this.bodyRows
-        ]);
+
+        this.el = el("div", [
+            el("table.category-header-table", [
+                el("thead", el("tr", new HeaderCell("."))),
+                this.headerColRows
+            ]),
+            el("div.overflow-auto", el("table", [
+                el("thead", this.headerRow),
+                this.bodyRows
+            ]))
+        ])
     }
 
     setTransactions(transactions: TransactionsResponse): void {
-        const headers = [""];
-        for (const d of transactions.dates) {
-            headers.push(`${d.getFullYear()}-${d.getMonth()}`)
-        }
-        this.headerRow.update(headers);
-
-        const rows: (number | string)[][] = [];
-        for (const c of transactions.categories.toReversed()) {
-            rows.push([c]);
-        }
+        this.headerRow.update(transactions.dates.map((d) => `${d.getFullYear()}-${d.getMonth()}`));
+        this.headerColRows.update(transactions.categories.toReversed().map((c) => [c]));
 
         // Transpose amounts
+        const rows: number[][] = [];
+        for (let i = 0; i < transactions.categories.length; i++) {
+            rows.push([]);
+        }
+
         for (let i = 0; i < transactions.amounts.length; i++) {
             const amounts = transactions.amounts[i] as number[];
             for (let j = 0; j < transactions.categories.length; j++) {
-                (rows[transactions.categories.length - j - 1] as (number | string)[]).push(amounts[j] as number);
+                (rows[transactions.categories.length - j - 1] as number[]).push(amounts[j] as number);
             }
         }
 
         this.bodyRows.update(rows);
-    }
-
-    setData(data: number[][]) {
-        this.bodyRows.update(data);
     }
 }

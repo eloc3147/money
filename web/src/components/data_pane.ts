@@ -52,9 +52,9 @@ export class DataPane implements RedomComponent {
     constructor() {
         this.plot = new Plot();
         this.table = new Table();
-        this.el = el("div.dataPane", [
+        this.el = el("div", [
             this.plot,
-            el("div.overflow-auto", this.table)
+            this.table
         ]);
     }
 

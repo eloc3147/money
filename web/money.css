@@ -1,0 +1,8 @@
+.category-header-table {
+    width: auto;
+    float: left;
+}
+
+.category-header-table th {
+    visibility: hidden;
+}
