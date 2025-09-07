@@ -189,7 +189,7 @@ function drawLegend(
     colorMap: ColorMap,
     startX: number,
 ): void {
-    let reversed = categories.toReversed();
+    const reversed = categories.toReversed();
 
     // Add one square in the legend for each name
     svg.selectAll("none")

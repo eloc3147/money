@@ -54,12 +54,14 @@ export class DataPane implements RedomComponent {
         this.table = new Table();
         this.el = el("div.dataPane", [
             this.plot,
-            this.table
+            el("div.overflow-auto", this.table)
         ]);
     }
 
     setTransactions(transactions: TransactionsResponse): void {
         this.plot.setTransactions(transactions);
         this.plot.updatePlot();
+
+        this.table.setTransactions(transactions);
     }
 }
