@@ -1,14 +1,21 @@
-function offset(series: StackRow[]) {
+function offset(series: StackRow[]): void {
     let s0: StackRow, s1: StackRow = series[0] as StackRow;
     const colCount = series.length,
         rowCount = s1.length;
     for (let rowIdx = 1; rowIdx < colCount; rowIdx += 1) {
         s0 = s1;
         s1 = series[rowIdx] as StackRow;
-        for (let colIdx = 0; colIdx < rowCount; ++colIdx) {
+        for (let colIdx = 1; colIdx < rowCount; colIdx += 1) {
             const s0val = s0[colIdx] as [number, number];
             const s1val = s1[colIdx] as [number, number];
-            s1val[1] += s1val[0] = isNaN(s0val[1]) ? s0val[0] : s0val[1];
+            let newVal;
+            if (isNaN(s0val[1])) {
+                newVal = s0val[0];
+            } else {
+                newVal = s0val[1];
+            }
+            s1val[0] = newVal;
+            s1val[1] += newVal;
         }
     }
 }

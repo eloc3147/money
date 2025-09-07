@@ -28,7 +28,7 @@ export default defineConfig([
         }
       ],
       "max-lines": ["error", 500],
-      "max-params": ["warn", 8],
+      "max-params": ["warn", 10],
       "max-lines-per-function": ["warn", 75],
       "no-warning-comments": "warn",
       "@typescript-eslint/no-explicit-any": "off",

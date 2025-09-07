@@ -1,40 +1,15 @@
+import { RedomComponent, el, setChildren } from "redom";
 import { TransactionsResponse, loadExpenses, loadIncome } from "./api";
-import { el, setChildren } from "redom";
-import { DataPane } from "./data_pane";
+import { DataPane } from "./components/data_pane";
+import { PageHeader } from "./components/header"
 
 
-enum Page {
+export enum Page {
     Expenses,
     Income,
 }
 
-
-class PageHeader {
-    expenseButton: HTMLAnchorElement;
-    incomeButton: HTMLAnchorElement;
-    el: HTMLElement;
-
-    constructor(contents: Contents) {
-        this.el = el("header.container-fluid", el("nav", [
-            el("ul", el("li", el("strong", "Money"))),
-            el("ul", [
-                el("li", this.expenseButton = el("a", "Expenses")),
-                el("li", this.incomeButton = el("a", "Income"))
-            ]),
-        ]));
-
-        this.expenseButton.onclick = async (_evt: MouseEvent) => {
-            await contents.main.selectPage(Page.Expenses);
-        };
-
-        this.incomeButton.onclick = async (_evt: MouseEvent) => {
-            await contents.main.selectPage(Page.Income);
-        };
-    }
-}
-
-
-class PageContents {
+class PageContents implements RedomComponent {
     selected: Page;
     loaded: Page | null;
 
@@ -49,18 +24,18 @@ class PageContents {
         this.el = el("main.container-fluid", this.dataPane);
     }
 
-    async onmount() {
+    async onmount(): Promise<void> {
         if (!this.selected) {
             await this.updatePage();
         }
     }
 
-    async selectPage(page: Page) {
+    async selectPage(page: Page): Promise<void> {
         this.selected = page;
         await this.updatePage();
     }
 
-    async updatePage() {
+    async updatePage(): Promise<void> {
         if (this.loaded === this.selected) {
             return;
         }
@@ -82,8 +57,7 @@ class PageContents {
     }
 }
 
-
-class Contents {
+export class Contents {
     header: PageHeader;
     main: PageContents;
 

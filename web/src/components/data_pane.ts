@@ -1,11 +1,12 @@
-import { el, setChildren } from "redom";
-import { TransactionsResponse } from "./api";
-import { plot } from "./plotter";
+import { RedomComponent, el, setChildren } from "redom";
+import { TransactionsResponse } from "../api";
+import { plot } from "../plotter";
+import { Table } from "./table";
 
 const PLOT_WIDTH = 1920;
 const PLOT_HEIGHT = 720;
 
-class Plot {
+class Plot implements RedomComponent {
     drawn: boolean;
     transactions: TransactionsResponse | null;
 
@@ -18,17 +19,17 @@ class Plot {
         this.el = el("div", { "aria-busy": true });
     }
 
-    setTransactions(transactions: TransactionsResponse) {
+    setTransactions(transactions: TransactionsResponse): void {
         this.transactions = transactions;
         this.drawn = false;
     }
 
-    updatePlot() {
+    updatePlot(): void {
         if (this.drawn) {
             return;
         }
 
-        if (this.transactions ===  null) {
+        if (this.transactions === null) {
             throw new Error("Transactions must be set before updating plot");
         }
 
@@ -43,15 +44,7 @@ class Plot {
     }
 }
 
-class Table {
-    el: HTMLTableElement;
-
-    constructor() {
-        this.el = el("table");
-    }
-}
-
-export class DataPane {
+export class DataPane implements RedomComponent {
     plot: Plot;
     table: Table;
     el: HTMLElement;
@@ -65,7 +58,7 @@ export class DataPane {
         ]);
     }
 
-    setTransactions(transactions: TransactionsResponse) {
+    setTransactions(transactions: TransactionsResponse): void {
         this.plot.setTransactions(transactions);
         this.plot.updatePlot();
     }
