@@ -2,6 +2,8 @@ mod db;
 mod importer;
 mod server;
 
+use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 
 use color_eyre::Result;
@@ -13,7 +15,7 @@ use indicatif::MultiProgress;
 
 use crate::db::DbConnection;
 
-fn print_uncategorized(categorizer: &Categorizer) {
+fn print_uncategorized(categorizer: &Categorizer) -> Result<()> {
     let (missing_prefix, missing_rule) = categorizer.get_missing_stats();
 
     if missing_prefix.len() > 0 {
@@ -50,8 +52,9 @@ fn print_uncategorized(categorizer: &Categorizer) {
         let count: usize = items.iter().map(|(_, c)| *c).sum();
 
         println!(
-            "\n{} transactions missing categories",
-            style(count).bright().yellow()
+            "\n{} transactions missing categories ({} unique)",
+            style(count).bright().yellow(),
+            style(items.len()).yellow(),
         );
 
         println!("Most frequent transactions missing categories:");
@@ -69,7 +72,22 @@ fn print_uncategorized(categorizer: &Categorizer) {
         if items.len() > 30 {
             println!("{}", style("...").bright().white());
         }
+
+        let mut missing_transaction_file = File::create("missing_categories.txt")
+            .wrap_err("Failed to create missing categories log file")?;
+
+        for (info, count) in items.iter() {
+            writeln!(
+                &mut missing_transaction_file,
+                "{:22} | {:55}: {}",
+                format!("{:?}", info.transaction_type),
+                &info.display,
+                count
+            )?;
+        }
     }
+
+    Ok(())
 }
 
 async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
@@ -145,7 +163,7 @@ async fn main() -> Result<()> {
         Emoji("✅ ", ""),
     );
 
-    print_uncategorized(&categorizer);
+    print_uncategorized(&categorizer)?;
 
     server::run(db_pool).await?;
 

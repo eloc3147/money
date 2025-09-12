@@ -26,6 +26,7 @@ pub enum UserTransactionType {
     AtmDeposit,
     Interest,
     BankFee,
+    ChequeDeposit,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
