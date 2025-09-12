@@ -45,15 +45,15 @@ export class Table implements RedomComponent {
 
     constructor() {
         this.headerColRows = list("tbody", DataRow);
-        this.headerRow = list("tr", HeaderCell);
         this.bodyRows = list("tbody", DataRow);
+        this.headerRow = list("tr", HeaderCell);
 
         this.el = el("div", [
-            el("table.category-header-table", [
+            el("table.category-header-table.striped", [
                 el("thead", el("tr", new HeaderCell("."))),
                 this.headerColRows
             ]),
-            el("div.overflow-auto", el("table", [
+            el("div.overflow-auto", el("table.striped", [
                 el("thead", this.headerRow),
                 this.bodyRows
             ]))

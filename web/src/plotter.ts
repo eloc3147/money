@@ -30,7 +30,7 @@ const Y_TICKS = 10;
 const Y_AXIS_WIDTH = 50;
 const X_AXIS_HEIGHT = 40;
 
-const LEGEND_WIDTH = 300;
+const LEGEND_WIDTH = 250;
 const LEGEND_TICK_SIZE = 20;
 const LEGEND_Y_OFFSET = 10;
 const LEGEND_TEXT_Y_OFFSET = 17;
@@ -54,7 +54,7 @@ function highlightHandler(_event: MouseEvent, data: string): void {
     d3.selectAll(".area-trace").style("opacity", HIGHLIGHT_OPACITY);
 
     // Expect the one that is hovered
-    d3.select(`.trace-${data}`).style("opacity", 1);
+    d3.select(`.trace-${data.replace(" ", "-")}`).style("opacity", 1);
 }
 
 function unhighlightHandler(_event: MouseEvent): void {
@@ -157,7 +157,7 @@ function drawPlotArea(
         .selectAll("none")
         .data(stackedData)
         .join("path")
-        .attr("class", (row: StackRow) => `area-trace trace-${row.key}`)
+        .attr("class", (row: StackRow) => `area-trace trace-${row.key.replace(" ", "-")}`)
         .style("fill", (row: StackRow) => colorMap.get(row.index) as string)
         .attr("d", area);
 
