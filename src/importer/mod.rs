@@ -13,12 +13,14 @@ use color_eyre::eyre::{Context, Result, eyre};
 use config::AccountConfig;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use loader::Loader;
-use num_enum::IntoPrimitive;
-use serde::Deserialize;
+use num_enum::{FromPrimitive, IntoPrimitive};
+use serde::{Deserialize, Serialize};
 
 use crate::db::DbConnection;
 
-#[derive(Debug, IntoPrimitive, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, IntoPrimitive, FromPrimitive, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Serialize,
+)]
 #[repr(u8)]
 pub enum TransactionType {
     Debit,
@@ -26,6 +28,7 @@ pub enum TransactionType {
     Pos,
     Atm,
     Fee,
+    #[num_enum(default)]
     Other,
 }
 

@@ -1,7 +1,7 @@
 import * as d3 from "d3";
 import { Coordinate, StackData, StackRow, stack } from "./stack_area";
 import { Timer } from "./timer";
-import { TransactionsResponse } from "./api";
+import { TransactionsByCategoryResponse } from "./api";
 
 // Sources from: https://python-graph-gallery.com/color-palette-finder/?palette=signac
 const PALATE = [
@@ -224,7 +224,7 @@ function drawLegend(
 }
 
 export function plot(
-    transactions: TransactionsResponse,
+    transactions: TransactionsByCategoryResponse,
     width: number,
     height: number
 ): SVGGElement {

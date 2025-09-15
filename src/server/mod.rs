@@ -7,21 +7,30 @@ use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
-use crate::db::{DbConnection, TransactionsByCategory};
+use crate::db::{DbConnection, Transaction, TransactionsByCategory};
 
-async fn get_expense_transactions(
+async fn get_transactions(
     mut conn: DbConnection,
-) -> Result<Json<TransactionsByCategory>, (StatusCode, String)> {
-    conn.get_expense_transactions()
+) -> Result<Json<Vec<Transaction>>, (StatusCode, String)> {
+    conn.get_transactions()
         .await
         .map(Json)
         .map_err(internal_eyre)
 }
 
-async fn get_income_transactions(
+async fn get_expenses_over_time(
     mut conn: DbConnection,
 ) -> Result<Json<TransactionsByCategory>, (StatusCode, String)> {
-    conn.get_income_transactions()
+    conn.get_expenses_over_time()
+        .await
+        .map(Json)
+        .map_err(internal_eyre)
+}
+
+async fn get_income_over_time(
+    mut conn: DbConnection,
+) -> Result<Json<TransactionsByCategory>, (StatusCode, String)> {
+    conn.get_income_over_time()
         .await
         .map(Json)
         .map_err(internal_eyre)
@@ -42,8 +51,9 @@ pub async fn run(db_pool: SqlitePool) -> eyre::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:3030").await.unwrap();
 
     let api = Router::new()
-        .route("/expenses", get(get_expense_transactions))
-        .route("/income", get(get_income_transactions))
+        .route("/transactions", get(get_transactions))
+        .route("/expenses", get(get_expenses_over_time))
+        .route("/income", get(get_income_over_time))
         .with_state(db_pool);
 
     let app = Router::new()

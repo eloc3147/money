@@ -7,13 +7,31 @@ async function apiRequest(endpoint: string): Promise<object> {
     return await resp.json();
 }
 
-export interface TransactionsResponse {
+export type TransactionsResponse = [
+    number,         // Account
+    string,         // Base Category
+    string,         // Category
+    string | null,  // Source Category
+    boolean,        // Income
+    string,         // Transaction Type
+    string,         // Date Str
+    number,         // Amount
+    string | null,  // Transaction Id
+    string,         // Name
+    string | null,  // Memo
+][];
+
+export async function loadTransactions(): Promise<TransactionsResponse> {
+    return await apiRequest("transactions") as TransactionsResponse;
+}
+
+export interface TransactionsByCategoryResponse {
     categories: string[];
     dates: Date[];
     amounts: number[][];
 }
 
-export async function loadExpenses(): Promise<TransactionsResponse> {
+export async function loadExpenses(): Promise<TransactionsByCategoryResponse> {
     const resp = await apiRequest("expenses") as any;
     return {
         categories: resp.categories,
@@ -22,7 +40,7 @@ export async function loadExpenses(): Promise<TransactionsResponse> {
     };
 }
 
-export async function loadIncome(): Promise<TransactionsResponse> {
+export async function loadIncome(): Promise<TransactionsByCategoryResponse> {
     const resp = await apiRequest("income") as any;
     return {
         categories: resp.categories,

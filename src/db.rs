@@ -7,6 +7,7 @@ use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::Context;
 use futures::{Stream, TryStreamExt};
+use num_enum::FromPrimitive;
 use serde::Serialize;
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
@@ -189,7 +190,46 @@ impl DbConnection {
         Ok(())
     }
 
-    pub async fn get_expense_transactions(&mut self) -> Result<TransactionsByCategory> {
+    pub async fn get_transactions(&mut self) -> Result<Vec<Transaction>> {
+        let mut rows = sqlx::query(
+            "SELECT
+                t.account,
+                t.base_category,
+                t.category,
+                t.source_category,
+                t.income,
+                t.transaction_type,
+                t.date_str,
+                t.amount,
+                t.transaction_id,
+                t.name,
+                t.memo
+            FROM
+                transactions t;",
+        )
+        .fetch(&mut *self.conn);
+
+        let mut transactions = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            transactions.push((
+                row.try_get::<u32, usize>(0usize)?,
+                row.try_get::<String, usize>(1usize)?,
+                row.try_get::<String, usize>(2usize)?,
+                row.try_get::<Option<String>, usize>(3usize)?,
+                row.try_get::<bool, usize>(4usize)?,
+                TransactionType::from_primitive(row.try_get::<u8, usize>(5usize)?),
+                row.try_get::<String, usize>(6usize)?,
+                row.try_get::<f64, usize>(7usize)?,
+                row.try_get::<Option<String>, usize>(8usize)?,
+                row.try_get::<String, usize>(9usize)?,
+                row.try_get::<Option<String>, usize>(10usize)?,
+            ));
+        }
+
+        Ok(transactions)
+    }
+
+    pub async fn get_expenses_over_time(&mut self) -> Result<TransactionsByCategory> {
         let mut rows = sqlx::query(
             "SELECT
                 c2.base_category,
@@ -233,7 +273,7 @@ impl DbConnection {
         TransactionsByCategory::from_rows(&mut rows).await
     }
 
-    pub async fn get_income_transactions(&mut self) -> Result<TransactionsByCategory> {
+    pub async fn get_income_over_time(&mut self) -> Result<TransactionsByCategory> {
         let mut rows = sqlx::query(
             "SELECT
                 c2.base_category,
@@ -305,6 +345,20 @@ where
         Ok(Self { conn })
     }
 }
+
+pub type Transaction = (
+    u32,             // account
+    String,          // base_category
+    String,          // category
+    Option<String>,  // source_category
+    bool,            // income
+    TransactionType, // transaction_type
+    String,          // date_str
+    f64,             // amount
+    Option<String>,  // transaction_id
+    String,          // name
+    Option<String>,  // memo
+);
 
 #[derive(Debug, Serialize)]
 pub struct TransactionsByCategory {

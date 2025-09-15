@@ -1,9 +1,11 @@
 import { RedomComponent, el, setChildren } from "redom";
 import { PlotPage } from "./pages/plot";
+import { TransactionsPage } from "./pages/transactions";
 
 
 export enum Page {
     Plot,
+    Transactions,
 }
 
 class PageHeader implements RedomComponent {
@@ -11,20 +13,19 @@ class PageHeader implements RedomComponent {
 
     constructor(contents: Contents) {
         const logoButton = el("a.navbar-item", el("strong", "Money"));
+        logoButton.onclick = (_evt: MouseEvent) => contents.main.selectPage(Page.Plot);
+
         const plotButton = el("a.navbar-item", "Plot");
+        plotButton.onclick = (_evt: MouseEvent) => contents.main.selectPage(Page.Plot);
 
-        logoButton.onclick = (_evt: MouseEvent) => {
-            contents.main.selectPage(Page.Plot);
-        };
-
-        plotButton.onclick = (_evt: MouseEvent) => {
-            contents.main.selectPage(Page.Plot);
-        };
+        const transactionsButton = el("a.navbar-item", "Transactions");
+        transactionsButton.onclick = (_evt: MouseEvent) => contents.main.selectPage(Page.Transactions);
 
         this.el = el("header", el("nav.navbar", [
             el("div.navbar-brand", logoButton),
             el("div.navbar-menu", el("div.navbar-end", [
                 plotButton,
+                transactionsButton
             ]))
         ], { role: "navigation", "aria-label": "main navigation" }));
     }
@@ -63,6 +64,9 @@ class PageContents implements RedomComponent {
         switch (this.selected) {
             case Page.Plot:
                 setChildren(this.el, [new PlotPage()]);
+                break;
+            case Page.Transactions:
+                setChildren(this.el, [new TransactionsPage()]);
                 break;
             default:
                 return;

@@ -1,8 +1,9 @@
-.category-header-table {
-    width: auto;
-    float: left;
+.sticky-table {
+    border-collapse: separate;
 }
 
-.category-header-table th {
-    visibility: hidden;
+.stick-thead {
+    position: sticky;
+    top: 0;
+    background-color: var(--bulma-table-background-color) !important;
 }
