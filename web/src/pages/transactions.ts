@@ -2,6 +2,7 @@ import { el, list, List, RedomComponent } from "redom";
 import { loadTransactions, TransactionsResponse } from "../api";
 
 const DISPLAY_LIMIT = 250;
+const AMOUNT_COL = 7;
 
 class DataCell implements RedomComponent {
     el: HTMLTableCellElement;
@@ -10,8 +11,11 @@ class DataCell implements RedomComponent {
         this.el = el("td");
     }
 
-    update(data: string): void {
+    update(data: string, index: number): void {
         this.el.textContent = data;
+        if (index == AMOUNT_COL) {
+            this.el.className = "amount-cell";
+        }
     }
 }
 
@@ -52,7 +56,7 @@ class Table implements RedomComponent {
         ]);
     }
 
-    setTransactions(transactions: TransactionsResponse): void {
+    setTransactions(transactions: string[][]): void {
         this.body.update(transactions);
     }
 }
@@ -72,7 +76,7 @@ export class TransactionsPage implements RedomComponent {
             el("div.message-body", `Truncated to ${DISPLAY_LIMIT} rows`),
             { hidden: true }
         );
-        this.el = el("div.container.is-fullhd", [
+        this.el = el("div.container.is-fluid", [
             this.table,
             this.truncated
         ]);
@@ -92,17 +96,48 @@ export class TransactionsPage implements RedomComponent {
             return;
         }
 
-        const transactionCount = this.transactions.length;
-        let count, truncated;
-        if (transactionCount > DISPLAY_LIMIT) {
-            count = DISPLAY_LIMIT;
+        let rows = this.transactions;
+
+        // TODO: Filter
+
+        // TODO: Sort
+
+        // Truncate
+        let truncated = false;
+        if (rows.length > DISPLAY_LIMIT) {
+            rows = rows.slice(0, DISPLAY_LIMIT);
             truncated = true;
-        } else {
-            count = transactionCount;
-            truncated = false;
         }
 
-        this.table.setTransactions(this.transactions.slice(0, count));
+        // Format
+        let mapped_rows = rows.map(([
+            account,
+            base_category,
+            category,
+            source_category,
+            income,
+            transaction_type,
+            date_str,
+            amount,
+            transaction_id,
+            name,
+            memo
+        ]) => [
+                account,
+                base_category,
+                category,
+                source_category == null ? "" : source_category,
+                income ? "Yes" : "No",
+                transaction_type,
+                date_str,
+                amount.toFixed(2),
+                transaction_id == null ? "" : transaction_id,
+                name,
+                memo == null ? "" : memo
+            ]);
+
+        // Apply rows
+        this.table.setTransactions(mapped_rows);
 
         if (truncated) {
             this.truncated.removeAttribute("hidden");

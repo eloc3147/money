@@ -193,7 +193,7 @@ impl DbConnection {
     pub async fn get_transactions(&mut self) -> Result<Vec<Transaction>> {
         let mut rows = sqlx::query(
             "SELECT
-                t.account,
+                a.name,
                 t.base_category,
                 t.category,
                 t.source_category,
@@ -205,14 +205,16 @@ impl DbConnection {
                 t.name,
                 t.memo
             FROM
-                transactions t;",
+                transactions t
+            LEFT JOIN
+                accounts a ON a.id = t.account;",
         )
         .fetch(&mut *self.conn);
 
         let mut transactions = Vec::new();
         while let Some(row) = rows.try_next().await? {
             transactions.push((
-                row.try_get::<u32, usize>(0usize)?,
+                row.try_get::<String, usize>(0usize)?,
                 row.try_get::<String, usize>(1usize)?,
                 row.try_get::<String, usize>(2usize)?,
                 row.try_get::<Option<String>, usize>(3usize)?,
@@ -347,7 +349,7 @@ where
 }
 
 pub type Transaction = (
-    u32,             // account
+    String,          // account
     String,          // base_category
     String,          // category
     Option<String>,  // source_category

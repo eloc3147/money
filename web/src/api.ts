@@ -8,7 +8,7 @@ async function apiRequest(endpoint: string): Promise<object> {
 }
 
 export type TransactionsResponse = [
-    number,         // Account
+    string,         // Account
     string,         // Base Category
     string,         // Category
     string | null,  // Source Category
