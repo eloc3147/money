@@ -61,8 +61,84 @@ class Table implements RedomComponent {
     }
 }
 
+class SelectOption implements RedomComponent {
+    el: HTMLElement;
+
+    constructor() {
+        this.el = el("option", { selected: true });
+    }
+
+    update(item: string): void {
+        this.el.textContent = item;
+    }
+}
+
+class Select implements RedomComponent {
+    select_el: HTMLSelectElement;
+    select: List;
+    el: HTMLElement;
+
+    constructor(onChange: (selected: Set<string>) => void) {
+        this.select_el = el("select", { multiple: true });
+        this.select = list(this.select_el, SelectOption);
+        this.select.el.onchange = (_e: Event) => {
+            // Get selected option labels
+            let selected: Set<string> = new Set();
+            const selectedOptions = this.select_el.selectedOptions;
+            for (let i = 0; i < selectedOptions.length; i++) {
+                selected.add((selectedOptions[i] as HTMLOptionElement).label);
+            }
+
+            onChange(selected);
+        };
+        this.el = el("div.select.is-multiple", this.select);
+    }
+
+    update(item: Set<string>): void {
+        this.select.update(Array.from(item).toSorted());
+    }
+}
+
+type FilterCallback = (accounts: Set<string>) => void;
+
+class TransactionFilters implements RedomComponent {
+    account_select: Select;
+
+    selected_accounts: Set<string>;
+    select_callback: FilterCallback;
+
+    el: HTMLElement;
+
+    constructor(select_callback: FilterCallback) {
+        this.account_select = new Select(this.onAccountsUpdate.bind(this));
+
+        this.selected_accounts = new Set();
+        this.select_callback = select_callback;
+
+        this.el = el("div.field", [
+            el("label.label", "Account"),
+            this.account_select
+        ]);
+    }
+
+    set_accounts(accounts: Set<string>): void {
+        this.account_select.update(accounts);
+        this.selected_accounts = accounts;
+    }
+
+    onAccountsUpdate(selected: Set<string>): void {
+        this.selected_accounts = selected;
+        this.pushSelections();
+    }
+
+    pushSelections(): void {
+        this.select_callback(this.selected_accounts);
+    }
+}
+
 export class TransactionsPage implements RedomComponent {
     transactions: TransactionsResponse | null;
+    filters: TransactionFilters;
     table: Table;
     truncated: HTMLElement;
     el: HTMLElement;
@@ -70,6 +146,7 @@ export class TransactionsPage implements RedomComponent {
     constructor() {
         this.transactions = null;
 
+        this.filters = new TransactionFilters(this.updateTable.bind(this));
         this.table = new Table();
         this.truncated = el(
             "article.message.is-warning",
@@ -77,6 +154,7 @@ export class TransactionsPage implements RedomComponent {
             { hidden: true }
         );
         this.el = el("div.container.is-fluid", [
+            this.filters,
             this.table,
             this.truncated
         ]);
@@ -87,18 +165,30 @@ export class TransactionsPage implements RedomComponent {
             return;
         }
 
-        this.transactions = await loadTransactions();
-        this.updateTable();
+        await this.loadTransactions();
+        this.filters.pushSelections();
     }
 
-    updateTable(): void {
+    async loadTransactions(): Promise<void> {
+        this.transactions = await loadTransactions();
+
+        let accounts: Set<string> = new Set();
+        for (const transaction of this.transactions) {
+            accounts.add(transaction[0]);
+        }
+
+        this.filters.set_accounts(accounts);
+    }
+
+    updateTable(accounts: Set<string>): void {
         if (this.transactions === null) {
             return;
         }
 
-        let rows = this.transactions;
-
-        // TODO: Filter
+        let rows = this.transactions
+            .values()
+            .filter((row, _idx) => accounts.has(row[0]))
+            .toArray();
 
         // TODO: Sort
 
