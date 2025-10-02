@@ -24,7 +24,7 @@ pub struct CsvTransaction {
 impl<'a> CsvTransaction {
     fn into_transaction(self) -> Result<Transaction<'a>> {
         let (transaction_type, amount) = match (self.debit, self.credit) {
-            (Some(debit), None) => (TransactionType::Debit, debit),
+            (Some(debit), None) => (TransactionType::Debit, -debit),
             (None, Some(credit)) => (TransactionType::Credit, credit),
             (Some(_), Some(_)) => {
                 bail!("Cannot convert CsvTransaction with both debit and credit values")
