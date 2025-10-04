@@ -201,9 +201,8 @@ export class TransactionsPage implements RedomComponent {
 
         this.table = new Table(this.updateTable.bind(this));
         this.truncated = el(
-            "article.message.is-warning",
-            el("div.message-body", `Truncated to ${DISPLAY_LIMIT} rows`),
-            { hidden: true }
+            "article.message.is-warning.is-hidden",
+            el("div.message-body", `Truncated to ${DISPLAY_LIMIT} rows`)
         );
         this.el = el("div.container.is-fluid", [
             this.table,
@@ -301,9 +300,9 @@ export class TransactionsPage implements RedomComponent {
         this.table.setTransactions(mapped_rows);
 
         if (truncated) {
-            this.truncated.removeAttribute("hidden");
+            this.truncated.classList.remove("is-hidden");
         } else {
-            this.truncated.setAttribute("hidden", "true");
+            this.truncated.classList.add("is-hidden");
         }
     }
 }
