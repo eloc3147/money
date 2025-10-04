@@ -48,7 +48,7 @@ class Select implements RedomComponent {
     select: List;
     el: HTMLElement;
 
-    constructor(onChange: (selected: Set<string>) => void) {
+    constructor(onChange: (selected: Set<string>) => void, options: Set<string> | null = null) {
         this.select_el = el("select.filter-select", { multiple: true }) as HTMLSelectElement;
         this.select = list(this.select_el, SelectOption);
         this.select.el.onchange = (_e: Event) => {
@@ -62,6 +62,10 @@ class Select implements RedomComponent {
             onChange(selected);
         };
         this.el = el("div.select.is-multiple.is-info.is-small.filter-container", this.select);
+
+        if (options !== null) {
+            this.update(options);
+        }
     }
 
     update(item: Set<string>): void {
@@ -73,7 +77,9 @@ type FilterCallback = (
     accounts: Set<string>,
     base_categories: Set<string>,
     categories: Set<string>,
-    source_categories: Set<string>
+    source_categories: Set<string>,
+    incomes: Set<boolean>,
+    types: Set<string>
 ) => void;
 
 class Table implements RedomComponent {
@@ -81,26 +87,34 @@ class Table implements RedomComponent {
     base_category_select: Select;
     category_select: Select;
     source_category_select: Select;
+    income_select: Select;
+    type_select: Select;
 
     selected_accounts: Set<string>;
     selected_base_categories: Set<string>;
     selected_categories: Set<string>;
     selected_source_categories: Set<string>;
+    selected_incomes: Set<boolean>;
+    selected_types: Set<string>;
     select_callback: FilterCallback;
 
     body: List;
     el: HTMLElement;
 
     constructor(select_callback: FilterCallback) {
-        this.account_select = new Select(this.onAccountsUpdate.bind(this));
+        this.account_select = new Select(this.onAccountUpdate.bind(this));
         this.base_category_select = new Select(this.onBaseCategoryUpdate.bind(this));
         this.category_select = new Select(this.onCategoryUpdate.bind(this));
         this.source_category_select = new Select(this.onSourceCategoryUpdate.bind(this));
+        this.income_select = new Select(this.onIncomeUpdate.bind(this), new Set(["Yes", "No"]));
+        this.type_select = new Select(this.onTypeUpdate.bind(this));
 
         this.selected_accounts = new Set();
         this.selected_base_categories = new Set();
         this.selected_categories = new Set();
         this.selected_source_categories = new Set();
+        this.selected_incomes = new Set([true, false]);
+        this.selected_types = new Set();
         this.select_callback = select_callback;
 
         this.body = list("tbody", DataRow);
@@ -123,8 +137,8 @@ class Table implements RedomComponent {
                 el("th", el("div.field", el("div.control", this.base_category_select))),
                 el("th", el("div.field", el("div.control", this.category_select))),
                 el("th", el("div.field", el("div.control", this.source_category_select))),
-                el("th", ""),
-                el("th", ""),
+                el("th", el("div.field", el("div.control", this.income_select))),
+                el("th", el("div.field", el("div.control", this.type_select))),
                 el("th", ""),
                 el("th", ""),
                 el("th", ""),
@@ -160,7 +174,12 @@ class Table implements RedomComponent {
         this.selected_source_categories = source_categories;
     }
 
-    onAccountsUpdate(selected: Set<string>): void {
+    setTypes(types: Set<string>): void {
+        this.type_select.update(types);
+        this.selected_types = types;
+    }
+
+    onAccountUpdate(selected: Set<string>): void {
         this.selected_accounts = selected;
         this.pushSelections();
     }
@@ -180,12 +199,24 @@ class Table implements RedomComponent {
         this.pushSelections();
     }
 
+    onIncomeUpdate(selected: Set<string>): void {
+        this.selected_incomes = new Set(selected.values().map((v) => v == "Yes").toArray());
+        this.pushSelections();
+    }
+
+    onTypeUpdate(selected: Set<string>): void {
+        this.selected_types = selected;
+        this.pushSelections();
+    }
+
     pushSelections(): void {
         this.select_callback(
             this.selected_accounts,
             this.selected_base_categories,
             this.selected_categories,
-            this.selected_source_categories
+            this.selected_source_categories,
+            this.selected_incomes,
+            this.selected_types
         );
     }
 }
@@ -226,24 +257,29 @@ export class TransactionsPage implements RedomComponent {
         let base_categories: Set<string> = new Set();
         let categories: Set<string> = new Set();
         let source_categories: Set<string> = new Set();
+        let types: Set<string> = new Set();
         for (const transaction of this.transactions) {
             accounts.add(transaction[0]);
             base_categories.add(transaction[1]);
             categories.add(transaction[2]);
             source_categories.add(transaction[3] || " - ");
+            types.add(transaction[5]);
         }
 
         this.table.setAccounts(accounts);
         this.table.setBaseCategories(base_categories);
         this.table.setCategories(categories);
         this.table.setSourceCategories(source_categories);
+        this.table.setTypes(types);
     }
 
     updateTable(
         accounts: Set<string>,
         base_categories: Set<string>,
         categories: Set<string>,
-        source_categories: Set<string>
+        source_categories: Set<string>,
+        incomes: Set<boolean>,
+        types: Set<string>
     ): void {
         if (this.transactions === null) {
             return;
@@ -256,7 +292,9 @@ export class TransactionsPage implements RedomComponent {
                 return accounts.has(row[0])
                     && base_categories.has(row[1])
                     && categories.has(row[2])
-                    && source_categories.has(row[3] || " - ");
+                    && source_categories.has(row[3] || " - ")
+                    && incomes.has(row[4])
+                    && types.has(row[5]);
             })
             .toArray();
 
