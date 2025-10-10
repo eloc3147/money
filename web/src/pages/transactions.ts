@@ -4,6 +4,29 @@ import { loadTransactions, TransactionsResponse } from "../api";
 const DISPLAY_LIMIT = 250;
 const AMOUNT_COL = 7;
 
+function sortNormal<T>(a: T, b: T): number {
+    if (a < b) {
+        return -1;
+    } else if (a > b) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+function sortStringOrNull(a: string | null, b: string | null): number {
+    const a_str = a || " - ";
+    const b_str = b || " - ";
+    if (a_str < b_str) {
+        return -1;
+    } else if (a_str > b_str) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+
 class DataCell implements RedomComponent {
     el: HTMLTableCellElement;
 
@@ -28,6 +51,53 @@ class DataRow implements RedomComponent {
 
     update(data: string[]): void {
         this.el.update(data);
+    }
+}
+
+class SortHeader implements RedomComponent {
+    ascending: boolean | null;
+
+    ascending_arrow: HTMLElement;
+    descending_arrow: HTMLElement;
+    el: HTMLElement;
+
+    constructor(onClick: () => void, name: string, long_name: string | null, ascending: boolean | null = null) {
+        this.ascending = null;
+
+        this.ascending_arrow = el("div.sort-arrow", "\u{25b2}");
+        this.descending_arrow = el("div.sort-arrow", "\u{25bc}");
+        this.el = el("div.sort-header", [
+            long_name !== null ? el("abbr", name, { title: long_name }) : name,
+            el("div.column-sorter", [
+                this.ascending_arrow,
+                this.descending_arrow,
+            ])
+        ]);
+
+        this.el.onclick = (_ev: PointerEvent) => onClick();
+
+        if (ascending !== null) {
+            this.select(ascending);
+        }
+    }
+
+    select(ascending: boolean | null): void {
+        if (ascending === this.ascending) {
+            return;
+        }
+
+        if (ascending === true) {
+            this.ascending_arrow.classList.add("selected-arrow");
+            this.descending_arrow.classList.remove("selected-arrow");
+        } else if (ascending === false) {
+            this.ascending_arrow.classList.remove("selected-arrow");
+            this.descending_arrow.classList.add("selected-arrow");
+        } else {
+            this.ascending_arrow.classList.remove("selected-arrow");
+            this.descending_arrow.classList.remove("selected-arrow");
+        }
+
+        this.ascending = ascending;
     }
 }
 
@@ -79,7 +149,9 @@ type FilterCallback = (
     categories: Set<string>,
     source_categories: Set<string>,
     incomes: Set<boolean>,
-    types: Set<string>
+    types: Set<string>,
+    sort_column: number,
+    sort_ascending: boolean
 ) => void;
 
 class Table implements RedomComponent {
@@ -97,6 +169,11 @@ class Table implements RedomComponent {
     selected_incomes: Set<boolean>;
     selected_types: Set<string>;
     select_callback: FilterCallback;
+
+    sort_headers: SortHeader[];
+
+    sort_idx: number;
+    sort_ascending: boolean;
 
     body: List;
     el: HTMLElement;
@@ -117,20 +194,37 @@ class Table implements RedomComponent {
         this.selected_types = new Set();
         this.select_callback = select_callback;
 
+        this.sort_headers = [
+            new SortHeader((() => this.onColumnSort(0)).bind(this), "Account", null),
+            new SortHeader((() => this.onColumnSort(1)).bind(this), "B. Category", "Base Category"),
+            new SortHeader((() => this.onColumnSort(2)).bind(this), "Category", null),
+            new SortHeader((() => this.onColumnSort(3)).bind(this), "S. Category", "Source Category"),
+            new SortHeader((() => this.onColumnSort(4)).bind(this), "Income", null),
+            new SortHeader((() => this.onColumnSort(5)).bind(this), "Type", null),
+            new SortHeader((() => this.onColumnSort(6)).bind(this), "Date", null, false),
+            new SortHeader((() => this.onColumnSort(7)).bind(this), "Amount", null),
+            new SortHeader((() => this.onColumnSort(8)).bind(this), "ID", null),
+            new SortHeader((() => this.onColumnSort(9)).bind(this), "Name", null),
+            new SortHeader((() => this.onColumnSort(10)).bind(this), "Memo", null)
+        ];
+
+        this.sort_idx = 6;
+        this.sort_ascending = false;
+
         this.body = list("tbody", DataRow);
         this.el = el("table.table.is-bordered.is-striped.is-hoverable.is-fullwidth.sticky-table", [
             el("thead.stick-thead", el("tr", [
-                el("th", "Account"),
-                el("th", el("abbr", "B. Category", { title: "Base Category" })),
-                el("th", "Category"),
-                el("th", el("abbr", "S. Category", { title: "Source Category" })),
-                el("th", "Income"),
-                el("th", "Type"),
-                el("th", "Date"),
-                el("th", "Amount"),
-                el("th", "ID"),
-                el("th", "Name"),
-                el("th", "Memo"),
+                el("th", this.sort_headers[0] as SortHeader),
+                el("th", this.sort_headers[1] as SortHeader),
+                el("th", this.sort_headers[2] as SortHeader),
+                el("th", this.sort_headers[3] as SortHeader),
+                el("th", this.sort_headers[4] as SortHeader),
+                el("th", this.sort_headers[5] as SortHeader),
+                el("th", this.sort_headers[6] as SortHeader),
+                el("th", this.sort_headers[7] as SortHeader),
+                el("th", this.sort_headers[8] as SortHeader),
+                el("th", this.sort_headers[9] as SortHeader),
+                el("th", this.sort_headers[10] as SortHeader),
             ])),
             el("thead", el("tr", [
                 el("th", el("div.field", el("div.control", this.account_select))),
@@ -209,6 +303,19 @@ class Table implements RedomComponent {
         this.pushSelections();
     }
 
+    onColumnSort(column: number): void {
+        if (column == this.sort_idx) {
+            this.sort_ascending = !this.sort_ascending;
+        } else {
+            this.sort_headers[this.sort_idx]?.select(null);
+            this.sort_ascending = false;
+        }
+
+        this.sort_idx = column;
+        this.sort_headers[column]?.select(this.sort_ascending);
+        this.pushSelections();
+    }
+
     pushSelections(): void {
         this.select_callback(
             this.selected_accounts,
@@ -216,7 +323,9 @@ class Table implements RedomComponent {
             this.selected_categories,
             this.selected_source_categories,
             this.selected_incomes,
-            this.selected_types
+            this.selected_types,
+            this.sort_idx,
+            this.sort_ascending,
         );
     }
 }
@@ -279,7 +388,9 @@ export class TransactionsPage implements RedomComponent {
         categories: Set<string>,
         source_categories: Set<string>,
         incomes: Set<boolean>,
-        types: Set<string>
+        types: Set<string>,
+        sort_column: number,
+        sort_ascending: boolean
     ): void {
         if (this.transactions === null) {
             return;
@@ -298,7 +409,21 @@ export class TransactionsPage implements RedomComponent {
             })
             .toArray();
 
-        // TODO: Sort
+
+        let compareFn: (a: any, b: any) => number;
+        switch (sort_column) {
+            case 3:
+            case 8:
+            case 10:
+                compareFn = sortStringOrNull;
+                break;
+            default:
+                compareFn = sortNormal;
+                break;
+        }
+
+        const reverse = sort_ascending ? 1 : -1;
+        rows.sort((a, b) => compareFn(a[sort_column], b[sort_column]) * reverse);
 
         // Truncate
         let truncated = false;
