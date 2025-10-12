@@ -98,8 +98,7 @@ impl Categorizer {
         let mut source_type_map = HashMap::new();
         for type_config in transaction_types {
             let categories = type_categories
-                .get(&type_config.transaction_type)
-                .map(Clone::clone)
+                .get(&type_config.transaction_type).cloned()
                 .unwrap_or_default();
 
             for category in categories.values() {

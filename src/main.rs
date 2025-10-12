@@ -19,9 +19,9 @@ use crate::db::DbConnection;
 fn print_uncategorized(categorizer: &Categorizer) -> Result<()> {
     let (missing_prefix, missing_rule) = categorizer.get_missing_stats();
 
-    if missing_prefix.len() > 0 {
+    if !missing_prefix.is_empty() {
         let mut items = Vec::from_iter(missing_prefix);
-        items.sort_by(|a, b| a.1.cmp(&b.1).reverse());
+        items.sort_by(|a, b| a.1.cmp(b.1).reverse());
         let count: usize = items.iter().map(|(_, c)| *c).sum();
 
         println!(
@@ -43,7 +43,7 @@ fn print_uncategorized(categorizer: &Categorizer) -> Result<()> {
         }
     }
 
-    if missing_rule.len() > 0 {
+    if !missing_rule.is_empty() {
         let mut items = Vec::from_iter(missing_rule);
         items.sort_by(|(a, _), (b, _)| {
             (a.transaction_type, &a.display)
@@ -135,7 +135,7 @@ async fn main() -> Result<()> {
         style("[3/4]").bold().dim(),
         Emoji("🏦 ", ""),
     );
-    let mut load_progress = MultiProgress::new();
+    let load_progress = MultiProgress::new();
 
     let db_pool = db::build().await.wrap_err("Failed to setup DB")?;
     let mut import_conn = db_pool
@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
         &mut categorizer,
         &mut import_conn,
         &config.account,
-        &mut load_progress,
+        &load_progress,
     )
     .await
     .wrap_err("Failed to load transactions")?;

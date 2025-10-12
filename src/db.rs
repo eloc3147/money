@@ -84,7 +84,7 @@ pub struct DbConnection {
 
 impl DbConnection {
     pub async fn add_category(&mut self, category: &str, income: bool) -> Result<()> {
-        let base_category = category.split(".").next().unwrap();
+        let base_category = category.split('.').next().unwrap();
 
         sqlx::query(
             "INSERT INTO categories (base_category, category, income) values (?1, ?2, ?3);",
@@ -143,7 +143,7 @@ impl DbConnection {
         name: &str,
         memo: Option<&str>,
     ) -> Result<()> {
-        let base_category = category.split(".").next().unwrap();
+        let base_category = category.split('.').next().unwrap();
 
         sqlx::query(
             "INSERT INTO transactions (
@@ -392,7 +392,7 @@ impl TransactionsByCategory {
             let amount: f32 = row.try_get(2usize)?;
 
             if current_date != date_str {
-                if current_row.len() > 0 {
+                if !current_row.is_empty() {
                     if first_date {
                         row_len = current_row.len();
                         first_date = false;

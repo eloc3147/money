@@ -191,7 +191,7 @@ fn read_sgml_header(src: &mut BufReader<File>) -> Result<Header> {
             line_ref = &line_ref[..line_ref.len() - 1];
         }
 
-        if line_ref.len() == 0 {
+        if line_ref.is_empty() {
             // Double newline means end of header
             break;
         }
@@ -203,7 +203,7 @@ fn read_sgml_header(src: &mut BufReader<File>) -> Result<Header> {
             )
         })?;
 
-        let mut parts = header.split(|c| c == ':');
+        let mut parts = header.split(':');
         let key = parts
             .next()
             .expect("Non zero length line should have at least one part");
@@ -351,7 +351,7 @@ fn read_xml_header(src: &mut BufReader<File>) -> Result<Header> {
 
         let kv_pairs = xml_values.split(' ');
         for kv_pair in kv_pairs {
-            if kv_pair.len() == 0 {
+            if kv_pair.is_empty() {
                 continue;
             }
 
@@ -414,7 +414,7 @@ fn read_xml_header(src: &mut BufReader<File>) -> Result<Header> {
 
     let kv_pairs = xml_values.split(' ');
     for kv_pair in kv_pairs {
-        if kv_pair.len() == 0 {
+        if kv_pair.is_empty() {
             continue;
         }
 
@@ -591,7 +591,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.last_item_was_value = true;
                         let value = &self.src.0[start..full_idx];
                         // Ignore empty values
-                        if value.trim().len() == 0 {
+                        if value.trim().is_empty() {
                             self.state = LexerState::CaptureKey(full_idx);
                         } else {
                             self.next_idx = full_idx + 1;
@@ -1235,7 +1235,7 @@ impl<'a> Iterator for QfxTransactionIter<'a> {
                     transaction_id: Some(Cow::Borrowed(transaction_id)),
                     category: None,
                     name: Cow::Borrowed(name),
-                    memo: memo.map(|m| Cow::Borrowed(m)),
+                    memo: memo.map(Cow::Borrowed),
                 }))
             }
             Ok(None) => None,

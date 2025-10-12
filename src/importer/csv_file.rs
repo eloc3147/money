@@ -221,7 +221,7 @@ impl ColumnMap {
 }
 
 fn parse_optional_float(value: &str) -> Result<Option<f64>> {
-    if value.len() == 0 {
+    if value.is_empty() {
         return Ok(None);
     }
 
