@@ -63,3 +63,47 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+  typescript-compile:
+    name: Run typescript compiler
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-tsc-${{ hashFiles('**/package-lock.json') }}
+      - name: Run tsc
+        run: npx tsc --noEmit
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-tsc-${{ hashFiles('**/package-lock.json') }}
+  eslint:
+    name: Run eslint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-eslint-${{ hashFiles('**/package-lock.json') }}
+      - name: Run eslint
+        run: npx eslint
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-eslint-${{ hashFiles('**/package-lock.json') }}
