@@ -15,10 +15,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run cargo check
         run: cargo check
-      - name: Cache
-        uses: actions/cache@v4
+      - name: Save cache
+        uses: actions/cache/save@v4
         with:
           path: |
             ~/.cargo/registry
@@ -35,7 +43,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run clippy
         uses: auguwu/clippy-action@1.4.0
         with:
           token: ${{secrets.GITHUB_TOKEN}}
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
