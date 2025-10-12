@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  cargo-check:
+    name: Run cargo check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Run cargo check
+        run: cargo check
+  clippy:
+    name: Run clippy
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install required tools
+        run: cargo install clippy-sarif sarif-fmt
+      - name: Run clippy
+        run: cargo clippy
+          --all-features
+          --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        continue-on-error: true
+      - name: Upload clippy results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: rust-clippy-results.sarif
+          wait-for-processing: true
