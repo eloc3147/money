@@ -7,11 +7,11 @@ use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
-use crate::db::{DbConnection, Transaction, TransactionsByCategory};
+use crate::db::{DbConnection, TransactionTuple, TransactionsByCategory};
 
 async fn get_transactions(
     mut conn: DbConnection,
-) -> Result<Json<Vec<Transaction>>, (StatusCode, String)> {
+) -> Result<Json<Vec<TransactionTuple>>, (StatusCode, String)> {
     conn.get_transactions()
         .await
         .map(Json)

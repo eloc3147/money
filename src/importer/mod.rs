@@ -131,19 +131,8 @@ pub async fn import_data(
                     last_date = transaction.date_posted;
                 }
 
-                conn.add_transaction(
-                    account_id,
-                    categorization.category,
-                    transaction.category.as_ref().map(|t| t.as_ref()),
-                    categorization.income,
-                    transaction.transaction_type,
-                    transaction.date_posted,
-                    transaction.amount,
-                    transaction.transaction_id.as_ref().map(|t| t.as_ref()),
-                    transaction.name.as_ref(),
-                    transaction.memo.as_ref().map(|m| m.as_ref()),
-                )
-                .await?;
+                conn.add_transaction(account_id, categorization, transaction)
+                    .await?;
             }
         }
 

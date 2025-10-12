@@ -13,7 +13,8 @@ use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{Connection, Row, Sqlite, SqlitePool};
 
-use crate::importer::TransactionType;
+use crate::importer::categorizer::CategorizationResult;
+use crate::importer::{Transaction, TransactionType};
 use crate::server::internal_error;
 
 pub async fn build() -> Result<SqlitePool> {
@@ -82,7 +83,7 @@ pub struct DbConnection {
     pub conn: PoolConnection<Sqlite>,
 }
 
-impl DbConnection {
+impl<'a> DbConnection {
     pub async fn add_category(&mut self, category: &str, income: bool) -> Result<()> {
         let base_category = category.split('.').next().unwrap();
 
@@ -133,17 +134,10 @@ impl DbConnection {
     pub async fn add_transaction(
         &mut self,
         account_id: i64,
-        category: &str,
-        source_category: Option<&str>,
-        income: bool,
-        transaction_type: TransactionType,
-        date_posted: NaiveDate,
-        amount: f64,
-        transaction_id: Option<&str>,
-        name: &str,
-        memo: Option<&str>,
+        categorization: CategorizationResult,
+        transaction: Transaction<'a>,
     ) -> Result<()> {
-        let base_category = category.split('.').next().unwrap();
+        let base_category = categorization.category.split('.').next().unwrap();
 
         sqlx::query(
             "INSERT INTO transactions (
@@ -174,15 +168,15 @@ impl DbConnection {
         )
         .bind(account_id)
         .bind(base_category)
-        .bind(category)
-        .bind(source_category)
-        .bind(income)
-        .bind::<u8>(transaction_type.into())
-        .bind(date_posted.to_string())
-        .bind(amount)
-        .bind(transaction_id)
-        .bind(name)
-        .bind(memo)
+        .bind(categorization.category)
+        .bind(transaction.category.as_ref().map(AsRef::as_ref))
+        .bind(categorization.income)
+        .bind::<u8>(transaction.transaction_type.into())
+        .bind(transaction.date_posted.to_string())
+        .bind(transaction.amount)
+        .bind(transaction.transaction_id.as_ref().map(AsRef::as_ref))
+        .bind(transaction.name.as_ref())
+        .bind(transaction.memo.as_ref().map(AsRef::as_ref))
         .execute(&mut *self.conn)
         .await
         .wrap_err("Failed to add transaction")?;
@@ -190,7 +184,7 @@ impl DbConnection {
         Ok(())
     }
 
-    pub async fn get_transactions(&mut self) -> Result<Vec<Transaction>> {
+    pub async fn get_transactions(&mut self) -> Result<Vec<TransactionTuple>> {
         let mut rows = sqlx::query(
             "SELECT
                 a.name,
@@ -348,7 +342,7 @@ where
     }
 }
 
-pub type Transaction = (
+pub type TransactionTuple = (
     String,          // account
     String,          // base_category
     String,          // category
