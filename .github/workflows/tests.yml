@@ -10,6 +10,8 @@ jobs:
   cargo-check:
     name: Run cargo check
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -26,6 +28,8 @@ jobs:
   clippy:
     name: Run clippy
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
     permissions:
       checks: write
     steps:

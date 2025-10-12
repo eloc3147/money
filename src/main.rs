@@ -1,3 +1,4 @@
+#[deny(clippy::all, clippy::pedantic)]
 mod db;
 mod importer;
 mod server;
