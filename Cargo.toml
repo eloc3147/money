@@ -22,7 +22,7 @@ serde = { version = "1.0", features = ["derive"] }
 encoding_rs = "0.8.35"
 chrono = "0.4.40"
 self_cell = "1.2.0"
-patricia_tree = "0.9.0"
+patricia_tree = "0.10.1"
 
 # Data store
 sqlx = { version = "=0.8.6", default-features = false, features = [
