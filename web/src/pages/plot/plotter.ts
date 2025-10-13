@@ -1,7 +1,7 @@
 import * as d3 from "d3";
 import { Coordinate, StackData, StackRow, stack } from "./stack_area";
-import { Timer } from "./timer";
-import { TransactionsByCategoryResponse } from "./api";
+import { Timer } from "../../timer";
+import { TransactionsByCategoryResponse } from "../../api";
 
 // Sources from: https://python-graph-gallery.com/color-palette-finder/?palette=signac
 const PALATE = [

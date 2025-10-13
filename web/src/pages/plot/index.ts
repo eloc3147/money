@@ -1,6 +1,6 @@
 import { el, RedomComponent, setChildren } from "redom";
-import { loadExpenses, loadIncome, TransactionsByCategoryResponse } from "../api";
-import { plot } from "../plotter";
+import { loadExpenses, loadIncome, TransactionsByCategoryResponse } from "../../api";
+import { plot } from "./plotter";
 
 const PLOT_WIDTH = 1920;
 const PLOT_HEIGHT = 720;
