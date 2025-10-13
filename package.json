@@ -5,7 +5,7 @@
     "redom": "^4.3.0"
   },
   "scripts": {
-    "build": "esbuild web/src/money.ts web/index.html web/money.css --loader:.html=copy --loader:.css=copy --bundle --minify --sourcemap --outdir=assets --entry-names=\"[name]\""
+    "build": "node build_web.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",

@@ -1,6 +1,8 @@
 {
     "compilerOptions": {
+        "rootDir": "./web/src",
         "module": "esnext",
+        "moduleDetection": "force",
         "moduleResolution": "Bundler",
         "target": "es2024",
         "lib": [
@@ -22,44 +24,7 @@
         "noUncheckedIndexedAccess": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
+        "noUncheckedSideEffectImports": true,
     },
-    "include": [
-        "web/src/"
-    ],
-    "exclude": [
-        "node_modules",
-        "**/node_modules/*"
-    ],
-    /*
-    "compilerOptions": {
-        "target": "es2016",
-        "module": "commonjs",
-        "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "strict": true,
-        "skipLibCheck": true
-    },
-
-    "compilerOptions": {
-        "strict": true,
-        "allowUnusedLabels": false,
-        "allowUnreachableCode": false,
-        "exactOptionalPropertyTypes": true,
-        "noFallthroughCasesInSwitch": true,
-        "noImplicitOverride": true,
-        "noImplicitReturns": true,
-        "noPropertyAccessFromIndexSignature": true,
-        "noUncheckedIndexedAccess": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-
-        "isolatedModules": true,
-
-        "checkJs": true,
-
-        "esModuleInterop": true,
-        "skipLibCheck": true
-    },
-    */
     "$schema": "https://json.schemastore.org/tsconfig",
 }
