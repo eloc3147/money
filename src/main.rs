@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
+use clap::{Arg, ArgAction, Command};
 use color_eyre::Result;
 use color_eyre::eyre::{Context, eyre};
 use console::{Emoji, style};
@@ -101,6 +102,19 @@ async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
+    let args = Command::new("Money")
+        .about("Money\nAnalyze your expenses")
+        .version(env!("CARGO_PKG_VERSION"))
+        .arg(
+            Arg::new("dump_db")
+                .long("dump-db")
+                .action(ArgAction::SetTrue)
+                .help("Dump the internal SqLite database to disk for debugging"),
+        )
+        .get_matches();
+
+    let dump_db = args.get_flag("dump_db");
+
     println!(
         "{}",
         style(concat!("Money v", env!("CARGO_PKG_VERSION"))).white()
@@ -155,14 +169,23 @@ async fn main() -> Result<()> {
 
     load_progress.clear()?;
 
-    // TMP
-    import_conn.dump_transactions().await?;
-
     println!(
         "{} {}Import complete",
         style("[4/4]").bold().dim(),
         Emoji("✅ ", ""),
     );
+
+    if dump_db {
+        import_conn.dump_transactions().await?;
+        println!(
+            "\n{}{}",
+            Emoji(" 🗄️ ", ""),
+            style("Database dumped to database.sqlite in the current directory")
+                .bold()
+                .bright()
+                .yellow()
+        );
+    }
 
     print_uncategorized(&categorizer)?;
 

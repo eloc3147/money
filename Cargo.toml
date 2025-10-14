@@ -12,6 +12,9 @@ color-eyre = "0.6.3"
 console = "0.16.0"
 indicatif = "0.18.0"
 
+# Argument parsing
+clap = "4.5.49"
+
 # OS Info
 dirs = "6.0.0"
 
