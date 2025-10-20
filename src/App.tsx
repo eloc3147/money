@@ -1,36 +1,29 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { Button } from "primereact/button";
+import { InputText } from "primereact/inputtext";
+
+import "primereact/resources/themes/lara-dark-teal/theme.css";
+import "primeicons/primeicons.css";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+function App() {
+  const [count, setCount] = useState(0);
 
   return (
-    <main className="container">
-      <h1>Welcome to Money</h1>
+    <div className="App">
+      <h1>Money</h1>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <div className="card">
+        <Button
+          icon="pi pi-plus"
+          className="mr-2"
+          label="Increment"
+          onClick={() => setCount((count) => count + 1)}
+        ></Button>
+        <InputText value={count as unknown as string} />
+      </div>
+    </div>
   );
 }
 

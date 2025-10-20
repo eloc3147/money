@@ -1,0 +1,18 @@
+:root {
+    color-scheme: dark;
+    color: var(--text-color);
+    background-color: var(--surface-ground);
+
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+}
+
+h1 {
+    font-size: 3.2em;
+}
