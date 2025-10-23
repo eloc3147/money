@@ -1,8 +1,9 @@
+import {PrimeReactProvider} from 'primereact/api';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import {PrimeReactProvider} from 'primereact/api';
-import App from './app.tsx';
+
 import './index.css';
+import App from './money/app.tsx';
 
 ReactDOM.createRoot(document.querySelector('#root')!).render((
     <React.StrictMode>
