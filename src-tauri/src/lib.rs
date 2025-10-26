@@ -1,14 +1,38 @@
+mod db;
+mod loader;
+
+use std::sync::Mutex;
+
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
-#[repr(u8)]
-pub enum TransactionType {
-    Debit,
-    Credit,
-    Pos,
-    Atm,
-    Fee,
-    Other,
+use crate::loader::TransactionType;
+
+pub enum LoadState {
+    NotStarted,
+    LoadingConfig,
+    BuildingRules,
+    LoadingFiles {
+        account: String,
+        done: usize,
+        total: usize,
+    },
+    Done,
+}
+
+impl LoadState {
+    fn progress(&self) -> f32 {
+        match self {
+            Self::NotStarted => 0.0,
+            Self::LoadingConfig => 1.0,
+            Self::BuildingRules => 5.0,
+            Self::LoadingFiles { done, total, .. } => 10.0 + (*done as f32 / *total as f32) * 85.0,
+            Self::Done => 100.0,
+        }
+    }
+}
+
+struct AppState {
+    load_state: Mutex<LoadState>,
 }
 
 #[derive(Debug, Serialize)]

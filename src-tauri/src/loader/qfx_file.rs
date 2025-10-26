@@ -11,7 +11,7 @@ use color_eyre::{Report, Result};
 use encoding_rs::WINDOWS_1252;
 use self_cell::self_cell;
 
-use crate::importer::{Transaction, TransactionType};
+use crate::loader::{ImportTransaction, TransactionType};
 
 #[derive(Debug)]
 struct DecodedContents<'a>(pub Cow<'a, str>);
@@ -1205,7 +1205,7 @@ pub struct QfxTransactionIter<'a> {
 }
 
 impl<'a> Iterator for QfxTransactionIter<'a> {
-    type Item = Result<Transaction<'a>>;
+    type Item = Result<ImportTransaction<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.parser.next_transaction() {
@@ -1228,7 +1228,7 @@ impl<'a> Iterator for QfxTransactionIter<'a> {
                 };
                 let date = date_posted.date_naive();
 
-                Some(Ok(Transaction {
+                Some(Ok(ImportTransaction {
                     transaction_type: file_transaction_type,
                     date_posted: date,
                     amount,

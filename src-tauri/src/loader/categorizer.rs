@@ -5,8 +5,8 @@ use color_eyre::Result;
 use color_eyre::eyre::{OptionExt, bail};
 use patricia_tree::GenericPatriciaMap;
 
-use crate::importer::TransactionType;
-use crate::importer::config::{
+use crate::loader::TransactionType;
+use crate::loader::config::{
     NameSource, TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode,
     UserTransactionType,
 };
@@ -98,7 +98,8 @@ impl Categorizer {
         let mut source_type_map = HashMap::new();
         for type_config in transaction_types {
             let categories = type_categories
-                .get(&type_config.transaction_type).cloned()
+                .get(&type_config.transaction_type)
+                .cloned()
                 .unwrap_or_default();
 
             for category in categories.values() {

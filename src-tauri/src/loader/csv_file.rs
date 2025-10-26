@@ -9,7 +9,7 @@ use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail};
 use csv::{Reader, StringRecord, StringRecordsIter};
 
-use crate::importer::{Transaction, TransactionType};
+use crate::loader::{ImportTransaction, TransactionType};
 
 pub struct CsvTransaction {
     // transaction_date: NaiveDate,
@@ -22,7 +22,7 @@ pub struct CsvTransaction {
 }
 
 impl<'a> CsvTransaction {
-    fn into_transaction(self) -> Result<Transaction<'a>> {
+    fn into_transaction(self) -> Result<ImportTransaction<'a>> {
         let (transaction_type, amount) = match (self.debit, self.credit) {
             (Some(debit), None) => (TransactionType::Debit, -debit),
             (None, Some(credit)) => (TransactionType::Credit, credit),
@@ -32,7 +32,7 @@ impl<'a> CsvTransaction {
             (None, None) => bail!("Cannot convert CsvTransaction without a debit or credit value"),
         };
 
-        Ok(Transaction {
+        Ok(ImportTransaction {
             transaction_type,
             date_posted: self.posted_date,
             amount,
@@ -136,7 +136,7 @@ pub struct CsvTransactionIter<'a> {
 }
 
 impl<'a> CsvTransactionIter<'a> {
-    fn next_transaction(&mut self) -> Result<Option<Transaction<'a>>> {
+    fn next_transaction(&mut self) -> Result<Option<ImportTransaction<'a>>> {
         let Some(record) = self.records.next() else {
             return Ok(None);
         };
@@ -155,7 +155,7 @@ impl<'a> CsvTransactionIter<'a> {
 }
 
 impl<'a> Iterator for CsvTransactionIter<'a> {
-    type Item = Result<Transaction<'a>>;
+    type Item = Result<ImportTransaction<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_transaction().transpose()

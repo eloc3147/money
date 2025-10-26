@@ -1,12 +1,13 @@
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use color_eyre::Result;
 use color_eyre::eyre::Context;
+use futures::TryFutureExt;
 use serde::Deserialize;
+use tokio::fs::File;
+use tokio::io::AsyncReadExt;
 
-use crate::importer::TransactionType;
+use crate::loader::TransactionType;
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum UserTransactionType {
@@ -81,11 +82,12 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn load(path: &Path) -> Result<Self> {
+    pub async fn load(path: &Path) -> Result<Self> {
         let mut config_text = String::new();
 
         File::open(path)
-            .and_then(|mut f| f.read_to_string(&mut config_text))
+            .and_then(async |mut f| f.read_to_string(&mut config_text).await)
+            .await
             .wrap_err_with(|| format!("Cannot read config file at {:?}", path))?;
 
         toml::from_str(&config_text).wrap_err("Malformed config file")

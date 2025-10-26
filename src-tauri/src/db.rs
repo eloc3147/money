@@ -1,8 +1,5 @@
 use std::path::PathBuf;
 
-use axum::extract::{FromRef, FromRequestParts};
-use axum::http::StatusCode;
-use axum::http::request::Parts;
 use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::Context;
@@ -13,9 +10,9 @@ use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteRow};
 use sqlx::{Connection, Row, Sqlite, SqlitePool};
 
-use crate::importer::categorizer::CategorizationResult;
-use crate::importer::{Transaction, TransactionType};
-use crate::server::internal_error;
+use crate::Transaction;
+use crate::loader::categorizer::CategorizationResult;
+use crate::loader::{ImportTransaction, TransactionType};
 
 pub async fn build() -> Result<SqlitePool> {
     let pool = SqlitePoolOptions::new()
@@ -135,7 +132,7 @@ impl<'a> DbConnection {
         &mut self,
         account_id: i64,
         categorization: CategorizationResult,
-        transaction: Transaction<'a>,
+        transaction: ImportTransaction<'a>,
     ) -> Result<()> {
         let base_category = categorization.category.split('.').next().unwrap();
 
@@ -184,7 +181,7 @@ impl<'a> DbConnection {
         Ok(())
     }
 
-    pub async fn get_transactions(&mut self) -> Result<Vec<TransactionTuple>> {
+    pub async fn get_transactions(&mut self) -> Result<Vec<Transaction>> {
         let mut rows = sqlx::query(
             "SELECT
                 a.name,
@@ -207,19 +204,21 @@ impl<'a> DbConnection {
 
         let mut transactions = Vec::new();
         while let Some(row) = rows.try_next().await? {
-            transactions.push((
-                row.try_get::<String, usize>(0usize)?,
-                row.try_get::<String, usize>(1usize)?,
-                row.try_get::<String, usize>(2usize)?,
-                row.try_get::<Option<String>, usize>(3usize)?,
-                row.try_get::<bool, usize>(4usize)?,
-                TransactionType::from_primitive(row.try_get::<u8, usize>(5usize)?),
-                row.try_get::<String, usize>(6usize)?,
-                row.try_get::<f64, usize>(7usize)?,
-                row.try_get::<Option<String>, usize>(8usize)?,
-                row.try_get::<String, usize>(9usize)?,
-                row.try_get::<Option<String>, usize>(10usize)?,
-            ));
+            transactions.push(Transaction {
+                account: row.try_get::<String, usize>(0usize)?,
+                base_category: row.try_get::<String, usize>(1usize)?,
+                category: row.try_get::<String, usize>(2usize)?,
+                source_category: row.try_get::<Option<String>, usize>(3usize)?,
+                income: row.try_get::<bool, usize>(4usize)?,
+                transaction_type: TransactionType::from_primitive(
+                    row.try_get::<u8, usize>(5usize)?,
+                ),
+                date: row.try_get::<String, usize>(6usize)?,
+                amount: row.try_get::<f64, usize>(7usize)?,
+                transaction_id: row.try_get::<Option<String>, usize>(8usize)?,
+                name: row.try_get::<String, usize>(9usize)?,
+                memo: row.try_get::<Option<String>, usize>(10usize)?,
+            });
         }
 
         Ok(transactions)
@@ -325,36 +324,6 @@ impl<'a> DbConnection {
         Ok(())
     }
 }
-
-impl<S> FromRequestParts<S> for DbConnection
-where
-    SqlitePool: FromRef<S>,
-    S: Send + Sync,
-{
-    type Rejection = (StatusCode, String);
-
-    async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let pool = SqlitePool::from_ref(state);
-
-        let conn = pool.acquire().await.map_err(internal_error)?;
-
-        Ok(Self { conn })
-    }
-}
-
-pub type TransactionTuple = (
-    String,          // account
-    String,          // base_category
-    String,          // category
-    Option<String>,  // source_category
-    bool,            // income
-    TransactionType, // transaction_type
-    String,          // date_str
-    f64,             // amount
-    Option<String>,  // transaction_id
-    String,          // name
-    Option<String>,  // memo
-);
 
 #[derive(Debug, Serialize)]
 pub struct TransactionsByCategory {
