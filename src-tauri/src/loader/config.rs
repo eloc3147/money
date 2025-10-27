@@ -3,13 +3,27 @@ use std::path::{Path, PathBuf};
 use color_eyre::Result;
 use color_eyre::eyre::Context;
 use futures::TryFutureExt;
+use num_enum::{FromPrimitive, IntoPrimitive};
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::loader::TransactionType;
+use crate::db::TransactionType;
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug,
+    Deserialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    FromPrimitive,
+    IntoPrimitive,
+)]
+#[repr(u8)]
 pub enum UserTransactionType {
     DebitPurchase,
     DebitRefund,
@@ -28,6 +42,8 @@ pub enum UserTransactionType {
     Interest,
     BankFee,
     ChequeDeposit,
+    #[num_enum(default)]
+    Unknown,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
