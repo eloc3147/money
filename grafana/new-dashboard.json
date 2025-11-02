@@ -34,41 +34,17 @@
         "fieldConfig": {
           "defaults": {
             "color": {
-              "mode": "palette-classic"
+              "mode": "thresholds"
             },
             "custom": {
-              "axisBorderShow": false,
-              "axisCenteredZero": false,
-              "axisColorMode": "text",
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "barWidthFactor": 0.6,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
+              "align": "auto",
+              "cellOptions": {
+                "type": "auto"
               },
-              "insertNulls": false,
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
+              "footer": {
+                "reducers": []
               },
-              "showPoints": "auto",
-              "showValues": false,
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
+              "inspect": false
             },
             "mappings": [],
             "thresholds": {
@@ -95,17 +71,8 @@
         },
         "id": 1,
         "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom",
-            "showLegend": true
-          },
-          "tooltip": {
-            "hideZeros": false,
-            "mode": "single",
-            "sort": "none"
-          }
+          "cellHeight": "sm",
+          "showHeader": true
         },
         "pluginVersion": "12.2.1",
         "targets": [
@@ -117,12 +84,89 @@
             },
             "editorMode": "builder",
             "format": "table",
-            "rawSql": "",
+            "rawSql": "SELECT account, base_category, category, source_category, transaction_type, posted_date, amount, name, memo FROM transactions WHERE income = false LIMIT 50 ",
             "refId": "A",
             "sql": {
               "columns": [
                 {
-                  "parameters": [],
+                  "parameters": [
+                    {
+                      "name": "account",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "base_category",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "category",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "source_category",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "transaction_type",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "posted_date",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "amount",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "name",
+                      "type": "functionParameter"
+                    }
+                  ],
+                  "type": "function"
+                },
+                {
+                  "parameters": [
+                    {
+                      "name": "memo",
+                      "type": "functionParameter"
+                    }
+                  ],
                   "type": "function"
                 }
               ],
@@ -134,13 +178,38 @@
                   "type": "groupBy"
                 }
               ],
-              "limit": 50
+              "limit": 50,
+              "whereJsonTree": {
+                "children1": [
+                  {
+                    "id": "a99aab89-4567-489a-bcde-f19a46849364",
+                    "properties": {
+                      "field": "income",
+                      "fieldSrc": "field",
+                      "operator": "equal",
+                      "value": [
+                        false
+                      ],
+                      "valueSrc": [
+                        "value"
+                      ],
+                      "valueType": [
+                        "boolean"
+                      ]
+                    },
+                    "type": "rule"
+                  }
+                ],
+                "id": "9aa8abbb-0123-4456-b89a-b19a4679dd38",
+                "type": "group"
+              },
+              "whereString": "income = false"
             },
             "table": "transactions"
           }
         ],
-        "title": "New panel",
-        "type": "timeseries"
+        "title": "Expenses",
+        "type": "table"
       }
     ],
     "preload": false,
