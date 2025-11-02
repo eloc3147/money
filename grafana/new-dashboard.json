@@ -98,6 +98,8 @@
           "y": 0
         },
         "id": 3,
+        "interval": "1week",
+        "maxDataPoints": 50,
         "options": {
           "legend": {
             "calcs": [],
@@ -122,7 +124,7 @@
             "editorMode": "code",
             "format": "table",
             "rawQuery": true,
-            "rawSql": "SELECT\r\n    t.base_category as category,\r\n    date_bin($__interval, t.posted_date, $__timeFrom) as transaction_date,\r\n    SUM(t.amount) * -1 as amount\r\nFROM\r\n    transactions t\r\nWHERE\r\n    t.income = false\r\nAND $__timeFilter(t.posted_date)\r\nGROUP BY\r\n    transaction_date,\r\n    category\r\n",
+            "rawSql": "SELECT\r\n    t.base_category as category,\r\n    date_bin(interval '${__interval}', t.posted_date, TIMESTAMP '${__from:date:YYYY-MM-DD}') as transaction_date,\r\n    SUM(t.amount) * -1 as amount\r\nFROM\r\n    transactions t\r\nWHERE\r\n    t.income = false\r\nAND $__timeFilter(t.posted_date)\r\nGROUP BY\r\n    transaction_date,\r\n    t.base_category\r\n",
             "refId": "A",
             "sql": {
               "columns": [
@@ -249,49 +251,10 @@
         "title": "Expenses",
         "transformations": [
           {
-            "id": "calculateField",
-            "options": {
-              "alias": "spend",
-              "binary": {
-                "left": {
-                  "matcher": {
-                    "id": "byName",
-                    "options": "amount"
-                  }
-                },
-                "operator": "*",
-                "right": {
-                  "fixed": "-1"
-                }
-              },
-              "mode": "binary",
-              "reduce": {
-                "reducer": "sum"
-              }
-            }
-          },
-          {
-            "id": "organize",
-            "options": {
-              "excludeByName": {
-                "amount": true,
-                "income": true
-              },
-              "includeByName": {},
-              "indexByName": {
-                "amount": 2,
-                "base_category": 1,
-                "income": 3,
-                "posted_date": 0
-              },
-              "renameByName": {}
-            }
-          },
-          {
             "id": "partitionByValues",
             "options": {
               "fields": [
-                "base_category"
+                "category"
               ],
               "keepFields": false,
               "naming": {
