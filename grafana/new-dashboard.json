@@ -62,7 +62,32 @@
               ]
             }
           },
-          "overrides": []
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "source_category"
+              },
+              "properties": [
+                {
+                  "id": "custom.width",
+                  "value": 163
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "amount"
+              },
+              "properties": [
+                {
+                  "id": "custom.width",
+                  "value": 115
+                }
+              ]
+            }
+          ]
         },
         "gridPos": {
           "h": 9,
