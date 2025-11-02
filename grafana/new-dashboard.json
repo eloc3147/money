@@ -73,11 +73,12 @@
         "id": 1,
         "options": {
           "cellHeight": "sm",
+          "enablePagination": false,
           "showHeader": true,
           "sortBy": [
             {
               "desc": true,
-              "displayName": "name"
+              "displayName": "amount"
             }
           ]
         },
@@ -89,9 +90,10 @@
               "type": "grafana-postgresql-datasource",
               "uid": "af2y1z8ouqp6oa"
             },
-            "editorMode": "builder",
+            "editorMode": "code",
             "format": "table",
-            "rawSql": "SELECT account, base_category, category, source_category, transaction_type, posted_date, amount, name, memo FROM transactions WHERE income = false LIMIT 50 ",
+            "rawQuery": true,
+            "rawSql": "SELECT\r\n  account,\r\n  base_category,\r\n  category,\r\n  source_category,\r\n  transaction_type,\r\n  posted_date,\r\n  amount,\r\n  name,\r\n  memo\r\nFROM\r\n  transactions\r\nWHERE\r\n  income = false\r\nAND $__timeFilter(posted_date)",
             "refId": "A",
             "sql": {
               "columns": [
@@ -216,201 +218,6 @@
           }
         ],
         "title": "Expenses",
-        "type": "table"
-      },
-      {
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "af2y1z8ouqp6oa"
-        },
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
-            "custom": {
-              "align": "auto",
-              "cellOptions": {
-                "type": "auto"
-              },
-              "filterable": true,
-              "footer": {
-                "reducers": []
-              },
-              "inspect": false
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": 0
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            }
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 9,
-          "w": 24,
-          "x": 0,
-          "y": 9
-        },
-        "id": 2,
-        "options": {
-          "cellHeight": "sm",
-          "showHeader": true,
-          "sortBy": [
-            {
-              "desc": true,
-              "displayName": "name"
-            }
-          ]
-        },
-        "pluginVersion": "12.2.1",
-        "targets": [
-          {
-            "dataset": "admin",
-            "datasource": {
-              "type": "grafana-postgresql-datasource",
-              "uid": "af2y1z8ouqp6oa"
-            },
-            "editorMode": "builder",
-            "format": "table",
-            "rawSql": "SELECT account, base_category, category, source_category, transaction_type, posted_date, amount, name, memo FROM transactions WHERE income = true LIMIT 50 ",
-            "refId": "A",
-            "sql": {
-              "columns": [
-                {
-                  "parameters": [
-                    {
-                      "name": "account",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "base_category",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "category",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "source_category",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "transaction_type",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "posted_date",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "amount",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "name",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                },
-                {
-                  "parameters": [
-                    {
-                      "name": "memo",
-                      "type": "functionParameter"
-                    }
-                  ],
-                  "type": "function"
-                }
-              ],
-              "groupBy": [
-                {
-                  "property": {
-                    "type": "string"
-                  },
-                  "type": "groupBy"
-                }
-              ],
-              "limit": 50,
-              "whereJsonTree": {
-                "children1": [
-                  {
-                    "id": "a99aab89-4567-489a-bcde-f19a46849364",
-                    "properties": {
-                      "field": "income",
-                      "fieldSrc": "field",
-                      "operator": "equal",
-                      "value": [
-                        true
-                      ],
-                      "valueError": [
-                        null
-                      ],
-                      "valueSrc": [
-                        "value"
-                      ],
-                      "valueType": [
-                        "boolean"
-                      ]
-                    },
-                    "type": "rule"
-                  }
-                ],
-                "id": "9aa8abbb-0123-4456-b89a-b19a4679dd38",
-                "type": "group"
-              },
-              "whereString": "income = true"
-            },
-            "table": "transactions"
-          }
-        ],
-        "title": "Income",
         "type": "table"
       }
     ],
