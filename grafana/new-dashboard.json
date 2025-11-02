@@ -34,6 +34,7 @@
         "fieldConfig": {
           "defaults": {
             "color": {
+              "fixedColor": "green",
               "mode": "palette-classic"
             },
             "custom": {
@@ -44,8 +45,8 @@
               "axisPlacement": "auto",
               "barAlignment": 0,
               "barWidthFactor": 0.6,
-              "drawStyle": "bars",
-              "fillOpacity": 0,
+              "drawStyle": "line",
+              "fillOpacity": 100,
               "gradientMode": "none",
               "hideFrom": {
                 "legend": false,
@@ -54,12 +55,15 @@
               },
               "insertNulls": false,
               "lineInterpolation": "linear",
-              "lineWidth": 1,
+              "lineStyle": {
+                "fill": "solid"
+              },
+              "lineWidth": 0,
               "pointSize": 5,
               "scaleDistribution": {
                 "type": "linear"
               },
-              "showPoints": "auto",
+              "showPoints": "never",
               "showValues": false,
               "spanNulls": false,
               "stacking": {
@@ -245,9 +249,32 @@
         "title": "Expenses",
         "transformations": [
           {
+            "id": "calculateField",
+            "options": {
+              "alias": "spend",
+              "binary": {
+                "left": {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "amount"
+                  }
+                },
+                "operator": "*",
+                "right": {
+                  "fixed": "-1"
+                }
+              },
+              "mode": "binary",
+              "reduce": {
+                "reducer": "sum"
+              }
+            }
+          },
+          {
             "id": "organize",
             "options": {
               "excludeByName": {
+                "amount": true,
                 "income": true
               },
               "includeByName": {},
