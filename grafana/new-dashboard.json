@@ -99,7 +99,7 @@
         },
         "id": 3,
         "interval": "1week",
-        "maxDataPoints": 50,
+        "maxDataPoints": 30,
         "options": {
           "legend": {
             "calcs": [],
