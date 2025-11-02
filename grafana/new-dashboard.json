@@ -92,7 +92,7 @@
           "overrides": []
         },
         "gridPos": {
-          "h": 9,
+          "h": 20,
           "w": 24,
           "x": 0,
           "y": 0
@@ -122,7 +122,7 @@
             "editorMode": "code",
             "format": "table",
             "rawQuery": true,
-            "rawSql": "SELECT\r\n  base_category,\r\n  amount,\r\n  income,\r\n  posted_date\r\nFROM\r\n  transactions\r\nWHERE\r\n  income = false\r\nAND $__timeFilter(posted_date)",
+            "rawSql": "SELECT\r\n    t.base_category as category,\r\n    date_bin($__interval, t.posted_date, $__timeFrom) as transaction_date,\r\n    SUM(t.amount) * -1 as amount\r\nFROM\r\n    transactions t\r\nWHERE\r\n    t.income = false\r\nAND $__timeFilter(t.posted_date)\r\nGROUP BY\r\n    transaction_date,\r\n    category\r\n",
             "refId": "A",
             "sql": {
               "columns": [
@@ -369,7 +369,7 @@
           "h": 9,
           "w": 24,
           "x": 0,
-          "y": 9
+          "y": 20
         },
         "id": 1,
         "options": {
@@ -588,7 +588,7 @@
           "h": 9,
           "w": 24,
           "x": 0,
-          "y": 18
+          "y": 29
         },
         "id": 2,
         "options": {
