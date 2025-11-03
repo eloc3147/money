@@ -74,7 +74,16 @@ pub struct TransactionRuleConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct DatabaseConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AppConfig {
+    pub database: DatabaseConfig,
     pub account: Vec<AccountConfig>,
     pub transaction_type: Vec<TransactionTypeConfig>,
     pub rule: Vec<TransactionRuleConfig>,

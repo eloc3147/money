@@ -1,18 +1,17 @@
 #[deny(clippy::all, clippy::pedantic)]
+mod config;
 mod db;
 mod importer;
-mod server;
 
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use clap::{Arg, ArgAction, Command};
 use color_eyre::Result;
 use color_eyre::eyre::{Context, eyre};
+use config::AppConfig;
 use console::{Emoji, style};
 use importer::categorizer::Categorizer;
-use importer::config::AppConfig;
 use indicatif::MultiProgress;
 
 use crate::db::DbConnection;
@@ -102,19 +101,6 @@ async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let args = Command::new("Money")
-        .about("Money\nAnalyze your expenses")
-        .version(env!("CARGO_PKG_VERSION"))
-        .arg(
-            Arg::new("dump_db")
-                .long("dump-db")
-                .action(ArgAction::SetTrue)
-                .help("Dump the internal SqLite database to disk for debugging"),
-        )
-        .get_matches();
-
-    let dump_db = args.get_flag("dump_db");
-
     println!(
         "{}",
         style(concat!("Money v", env!("CARGO_PKG_VERSION"))).white()
@@ -151,7 +137,9 @@ async fn main() -> Result<()> {
     );
     let load_progress = MultiProgress::new();
 
-    let db_pool = db::build().await.wrap_err("Failed to setup DB")?;
+    let db_pool = db::build(&config.database)
+        .await
+        .wrap_err("Failed to setup DB")?;
     let mut import_conn = db_pool
         .acquire()
         .await
@@ -175,21 +163,7 @@ async fn main() -> Result<()> {
         Emoji("✅ ", ""),
     );
 
-    if dump_db {
-        import_conn.dump_transactions().await?;
-        println!(
-            "\n{}{}",
-            Emoji(" 🗄️ ", ""),
-            style("Database dumped to database.sqlite in the current directory")
-                .bold()
-                .bright()
-                .yellow()
-        );
-    }
-
     print_uncategorized(&categorizer)?;
-
-    server::run(db_pool).await?;
 
     Ok(())
 }
