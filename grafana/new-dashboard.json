@@ -98,8 +98,7 @@
           "y": 0
         },
         "id": 3,
-        "interval": "1week",
-        "maxDataPoints": 30,
+        "interval": "30day",
         "options": {
           "legend": {
             "calcs": [],
