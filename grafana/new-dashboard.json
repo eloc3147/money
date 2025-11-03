@@ -330,7 +330,7 @@
           "overrides": []
         },
         "gridPos": {
-          "h": 20,
+          "h": 8,
           "w": 24,
           "x": 0,
           "y": 20
@@ -361,7 +361,7 @@
             "editorMode": "code",
             "format": "table",
             "rawQuery": true,
-            "rawSql": "SELECT\r\n    t.base_category as category,\r\n    date_bin(interval '${__interval}', t.posted_date, TIMESTAMP '${__from:date:YYYY-MM-DD}') as transaction_date,\r\n    SUM(t.amount) * -1 as amount\r\nFROM\r\n    transactions t\r\nWHERE\r\n    t.income = true\r\nAND $__timeFilter(t.posted_date)\r\nGROUP BY\r\n    transaction_date,\r\n    t.base_category\r\n",
+            "rawSql": "SELECT\r\n    t.base_category as category,\r\n    date_bin(interval '${__interval}', t.posted_date, TIMESTAMP '${__from:date:YYYY-MM-DD}') as transaction_date,\r\n    SUM(t.amount) as amount\r\nFROM\r\n    transactions t\r\nWHERE\r\n    t.income = true\r\nAND $__timeFilter(t.posted_date)\r\nGROUP BY\r\n    transaction_date,\r\n    t.base_category\r\n",
             "refId": "A",
             "sql": {
               "columns": [
@@ -569,7 +569,7 @@
           "h": 9,
           "w": 24,
           "x": 0,
-          "y": 40
+          "y": 28
         },
         "id": 1,
         "options": {
@@ -578,7 +578,7 @@
           "showHeader": true,
           "sortBy": [
             {
-              "desc": true,
+              "desc": false,
               "displayName": "amount"
             }
           ]
@@ -788,7 +788,7 @@
           "h": 9,
           "w": 24,
           "x": 0,
-          "y": 49
+          "y": 37
         },
         "id": 2,
         "options": {
