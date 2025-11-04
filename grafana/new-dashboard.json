@@ -23,7 +23,7 @@
     },
     "editable": true,
     "fiscalYearStartMonth": 0,
-    "graphTooltip": 0,
+    "graphTooltip": 1,
     "links": [],
     "panels": [
       {
@@ -112,7 +112,7 @@
             "sort": "none"
           }
         },
-        "pluginVersion": "12.2.1",
+        "pluginVersion": "12.3.0-19020365962",
         "targets": [
           {
             "dataset": "admin",
@@ -350,7 +350,7 @@
             "sort": "none"
           }
         },
-        "pluginVersion": "12.2.1",
+        "pluginVersion": "12.3.0-19020365962",
         "targets": [
           {
             "dataset": "admin",
@@ -578,12 +578,12 @@
           "showHeader": true,
           "sortBy": [
             {
-              "desc": false,
+              "desc": true,
               "displayName": "amount"
             }
           ]
         },
-        "pluginVersion": "12.2.1",
+        "pluginVersion": "12.3.0-19020365962",
         "targets": [
           {
             "dataset": "admin",
@@ -802,7 +802,7 @@
             }
           ]
         },
-        "pluginVersion": "12.2.1",
+        "pluginVersion": "12.3.0-19020365962",
         "targets": [
           {
             "dataset": "admin",
@@ -953,6 +953,6 @@
     },
     "timepicker": {},
     "timezone": "browser",
-    "title": "New dashboard"
+    "title": "General"
   }
 }
