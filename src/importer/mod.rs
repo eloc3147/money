@@ -5,12 +5,14 @@ mod csv_file;
 mod qfx_file;
 
 use std::borrow::Cow;
+use std::time::{Duration, Instant};
 
 use categorizer::Categorizer;
 use chrono::NaiveDate;
 use color_eyre::eyre::{Context, Result, eyre};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use loader::Loader;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::config::AccountConfig;
@@ -43,7 +45,7 @@ impl TransactionType {
 pub struct Transaction<'a> {
     pub transaction_type: TransactionType,
     pub date_posted: NaiveDate,
-    pub amount: f64,
+    pub amount: Decimal,
     pub transaction_id: Option<Cow<'a, str>>,
     pub category: Option<Cow<'a, str>>,
     pub name: Cow<'a, str>,
@@ -105,7 +107,7 @@ pub async fn import_data(
 
                 if let Some(tid) = transaction.transaction_id.as_ref()
                     && tid.contains(".")
-                    && transaction.amount == 0.0
+                    && transaction.amount.is_zero()
                 {
                     // Weird multiline transaction. Extra lines don't contain much useful information
                     continue;

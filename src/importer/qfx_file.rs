@@ -9,6 +9,7 @@ use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 use color_eyre::eyre::{Context, OptionExt, bail, eyre};
 use color_eyre::{Report, Result};
 use encoding_rs::WINDOWS_1252;
+use rust_decimal::Decimal;
 use self_cell::self_cell;
 
 use crate::importer::{Transaction, TransactionType};
@@ -679,7 +680,7 @@ pub struct StatementTransaction<'a> {
     transaction_type: QfxTransactionType,
     date_posted: DateTime<FixedOffset>,
     // user_date: Option<NaiveDateTime>,
-    amount: f64,
+    amount: Decimal,
     transaction_id: &'a str,
     name: &'a str,
     // account_to: Option<AccountTo>,
@@ -739,7 +740,7 @@ struct DocumentParser<'a> {
     transaction_type: Option<QfxTransactionType>,
     date_posted: Option<DateTime<FixedOffset>>,
     user_date: Option<NaiveDateTime>,
-    amount: Option<f64>,
+    amount: Option<Decimal>,
     transaction_id: Option<&'a str>,
     name: Option<&'a str>,
     account_to: Option<AccountTo>,
@@ -890,7 +891,7 @@ impl<'a> DocumentParser<'a> {
                     Some("TRNTYPE") => {let check = self.get_transaction_type();self.transaction_type.put_or_else("TRNTYPE", check)?},
                     Some("DTPOSTED") => {let check = self.get_timestamp();self.date_posted.put_or_else("DTPOSTED", check)?},
                     Some("DTUSER") => {let check = self.get_timestamp_naive();self.user_date.put_or_else("DTUSER", check)?},
-                    Some("TRNAMT") => {let check = self.get_float();self.amount.put_or_else("TRNAMT", check)?},
+                    Some("TRNAMT") => {let check = self.get_decimal();self.amount.put_or_else("TRNAMT", check)?},
                     Some("FITID") => {let check = self.get_value();self.transaction_id.put_or_else("FITID", check)?},
                     Some("NAME") => {let check = self.get_value();self.name.put_or_else("NAME",  check)?},
                     Some("CCACCTTO") => {let check =self.get_account_to(); self.account_to.put_or_else("CCACCTTO",  check)?},
@@ -1031,7 +1032,7 @@ impl<'a> DocumentParser<'a> {
         let mut timestamp = false;
         loop {
             match self.get_field(struct_name)? {
-                Some("BALAMT") => amount.set_with_value("BALAMT", self.get_float())?,
+                Some("BALAMT") => amount.set_with_value("BALAMT", self.get_decimal())?,
                 Some("DTASOF") => timestamp.set_with_value("DTASOF", self.get_timestamp())?,
                 Some(key) => bail!("Unexpected key '{}'", key),
                 None => break,
@@ -1092,10 +1093,9 @@ impl<'a> DocumentParser<'a> {
             .wrap_err("Failed to parse u32 value")
     }
 
-    fn get_float(&mut self) -> Result<f64> {
-        self.get_value()?
-            .parse()
-            .wrap_err("Failed to parse float value")
+    fn get_decimal(&mut self) -> Result<Decimal> {
+        let value = self.get_value()?;
+        Decimal::from_str_exact(value).wrap_err("Failed to parse float value")
     }
 
     fn get_timestamp(&mut self) -> Result<DateTime<FixedOffset>> {

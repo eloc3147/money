@@ -23,12 +23,14 @@ encoding_rs = "0.8.35"
 chrono = "0.4.40"
 self_cell = "1.2.0"
 patricia_tree = "0.10.1"
+rust_decimal = "1.39.0"
 
 # Data store
 sqlx = { version = "=0.8.6", default-features = false, features = [
     "runtime-tokio",
     "postgres",
     "chrono",
+    "rust_decimal",
 ] }
 
 # Web Server
