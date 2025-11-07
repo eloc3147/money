@@ -6,7 +6,7 @@ use color_eyre::eyre::{OptionExt, bail};
 use patricia_tree::GenericPatriciaMap;
 
 use crate::config::{
-    NameSource, TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode,
+    IncomeType, NameSource, TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode,
     UserTransactionType,
 };
 use crate::importer::TransactionType;
@@ -15,7 +15,7 @@ use crate::importer::TransactionType;
 struct TransactionDecoder {
     transaction_type: UserTransactionType,
     name_source: NameSource,
-    income: bool,
+    income: IncomeType,
     categories: HashMap<&'static str, PatternCategory>,
 }
 
@@ -35,7 +35,7 @@ pub struct MissingRuleInfo {
 
 #[derive(Debug, Clone, Copy)]
 pub struct CategorizationResult {
-    pub income: bool,
+    pub income: IncomeType,
     pub ignore: bool,
     pub category: &'static str,
 }

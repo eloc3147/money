@@ -4,7 +4,7 @@ use sqlx::pool::{PoolConnection, PoolOptions};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{PgPool, Postgres};
 
-use crate::config::DatabaseConfig;
+use crate::config::{DatabaseConfig, IncomeType};
 use crate::importer::Transaction;
 use crate::importer::categorizer::CategorizationResult;
 
@@ -88,6 +88,11 @@ impl<'a> DbConnection {
         transaction: Transaction<'a>,
     ) -> Result<()> {
         let base_category = categorization.category.split('.').next().unwrap();
+        let income = match categorization.income {
+            IncomeType::Yes => true,
+            IncomeType::No => false,
+            IncomeType::Auto => transaction.amount.is_sign_positive(),
+        };
 
         sqlx::query(
             "INSERT INTO transactions (
@@ -120,7 +125,7 @@ impl<'a> DbConnection {
         .bind(base_category)
         .bind(categorization.category)
         .bind(transaction.category)
-        .bind(categorization.income)
+        .bind(income)
         .bind(transaction.transaction_type.name())
         .bind(transaction.date_posted)
         .bind(transaction.amount)

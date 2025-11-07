@@ -49,6 +49,15 @@ pub struct AccountConfig {
     pub source_path: PathBuf,
 }
 
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum IncomeType {
+    Yes,
+    #[default]
+    No,
+    Auto,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TransactionTypeConfig {
     #[serde(default)]
@@ -59,7 +68,7 @@ pub struct TransactionTypeConfig {
     pub source_type: Option<TransactionType>,
     pub transaction_type: UserTransactionType,
     #[serde(default)]
-    pub income: bool,
+    pub income: IncomeType,
     pub name_source: NameSource,
     pub accounts: Vec<String>,
 }
