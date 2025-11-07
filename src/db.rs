@@ -23,19 +23,9 @@ pub async fn build(config: &DatabaseConfig) -> Result<PgPool> {
 
     let mut conn = pool.acquire().await.wrap_err("Failed to get DB handle")?;
 
-    // TODO: Are categories needed with grafana?
     sqlx::raw_sql(
         "
-        DROP TABLE IF EXISTS accounts;
-        DROP TABLE IF EXISTS categories;
         DROP TABLE IF EXISTS transactions;
-
-        CREATE TABLE categories (
-            id            serial PRIMARY KEY,
-            base_category text NOT NULL,
-            category      text NOT NULL,
-            income        boolean
-        );
 
         CREATE TABLE transactions (
             id               serial PRIMARY KEY,
@@ -65,22 +55,6 @@ pub struct DbConnection {
 }
 
 impl<'a> DbConnection {
-    pub async fn add_category(&mut self, category: &str, income: bool) -> Result<()> {
-        let base_category = category.split('.').next().unwrap();
-
-        sqlx::query(
-            "INSERT INTO categories (base_category, category, income) values ($1, $2, $3);",
-        )
-        .bind(base_category)
-        .bind(category)
-        .bind(income)
-        .execute(&mut *self.conn)
-        .await
-        .wrap_err("Failed to add category")?;
-
-        Ok(())
-    }
-
     pub async fn add_transaction(
         &mut self,
         account: &str,

@@ -136,13 +136,6 @@ pub async fn import_data(
         progress.remove(&account_spinner);
     }
 
-    spinner.set_message("Loading metadata");
-
-    // Add categories
-    for (category, income) in categorizer.categories() {
-        conn.add_category(category, *income).await?;
-    }
-
     spinner.finish();
     progress.remove(&spinner);
 
