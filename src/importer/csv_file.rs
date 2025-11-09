@@ -8,6 +8,7 @@ use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail};
 use csv::{Reader, StringRecord, StringRecordsIter};
+use rust_decimal::Decimal;
 
 use crate::importer::{Transaction, TransactionType};
 
@@ -17,8 +18,8 @@ pub struct CsvTransaction {
     // card_number: u16,
     description: String,
     category: String,
-    debit: Option<f64>,
-    credit: Option<f64>,
+    debit: Option<Decimal>,
+    credit: Option<Decimal>,
 }
 
 impl<'a> CsvTransaction {
@@ -202,11 +203,11 @@ impl ColumnMap {
         let debit = record
             .get(self.debit_col)
             .ok_or_eyre("Failed to get debit column")
-            .and_then(|s| parse_optional_float(s).wrap_err("Failed to parse debit"))?;
+            .and_then(|s| parse_optional_amount(s).wrap_err("Failed to parse debit"))?;
         let credit = record
             .get(self.credit_col)
             .ok_or_eyre("Failed to get credit column")
-            .and_then(|s| parse_optional_float(s).wrap_err("Failed to parse credit"))?;
+            .and_then(|s| parse_optional_amount(s).wrap_err("Failed to parse credit"))?;
 
         Ok(CsvTransaction {
             // transaction_date,
@@ -220,10 +221,10 @@ impl ColumnMap {
     }
 }
 
-fn parse_optional_float(value: &str) -> Result<Option<f64>> {
+fn parse_optional_amount(value: &str) -> Result<Option<Decimal>> {
     if value.is_empty() {
         return Ok(None);
     }
 
-    Ok(Some(value.parse()?))
+    Ok(Some(Decimal::from_str_exact(value)?))
 }

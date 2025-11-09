@@ -49,6 +49,15 @@ pub struct AccountConfig {
     pub source_path: PathBuf,
 }
 
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum IncomeType {
+    Yes,
+    #[default]
+    No,
+    Auto,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TransactionTypeConfig {
     #[serde(default)]
@@ -59,7 +68,7 @@ pub struct TransactionTypeConfig {
     pub source_type: Option<TransactionType>,
     pub transaction_type: UserTransactionType,
     #[serde(default)]
-    pub income: bool,
+    pub income: IncomeType,
     pub name_source: NameSource,
     pub accounts: Vec<String>,
 }
@@ -74,7 +83,16 @@ pub struct TransactionRuleConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct DatabaseConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AppConfig {
+    pub database: DatabaseConfig,
     pub account: Vec<AccountConfig>,
     pub transaction_type: Vec<TransactionTypeConfig>,
     pub rule: Vec<TransactionRuleConfig>,
@@ -86,7 +104,7 @@ impl AppConfig {
 
         File::open(path)
             .and_then(|mut f| f.read_to_string(&mut config_text))
-            .wrap_err_with(|| format!("Cannot read config file at {:?}", path))?;
+            .wrap_err_with(|| format!("Cannot read config file at {}", path.display()))?;
 
         toml::from_str(&config_text).wrap_err("Malformed config file")
     }

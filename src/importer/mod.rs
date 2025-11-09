@@ -1,4 +1,3 @@
-pub mod config;
 pub mod loader;
 
 pub mod categorizer;
@@ -8,35 +7,44 @@ mod qfx_file;
 use std::borrow::Cow;
 
 use categorizer::Categorizer;
-use chrono::{Days, NaiveDate};
+use chrono::NaiveDate;
 use color_eyre::eyre::{Context, Result, eyre};
-use config::AccountConfig;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use loader::Loader;
-use num_enum::{FromPrimitive, IntoPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use crate::config::AccountConfig;
 use crate::db::DbConnection;
 
-#[derive(
-    Debug, IntoPrimitive, FromPrimitive, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Serialize,
-)]
-#[repr(u8)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum TransactionType {
     Debit,
     Credit,
     Pos,
     Atm,
     Fee,
-    #[num_enum(default)]
     Other,
+}
+
+impl TransactionType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Debit => "Debit",
+            Self::Credit => "Credit",
+            Self::Pos => "Pos",
+            Self::Atm => "Atm",
+            Self::Fee => "Fee",
+            Self::Other => "Other",
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Transaction<'a> {
     pub transaction_type: TransactionType,
     pub date_posted: NaiveDate,
-    pub amount: f64,
+    pub amount: Decimal,
     pub transaction_id: Option<Cow<'a, str>>,
     pub category: Option<Cow<'a, str>>,
     pub name: Cow<'a, str>,
@@ -56,14 +64,9 @@ pub async fn import_data(
     spinner.tick();
 
     // Add transactions
-    let mut first_date = NaiveDate::MAX;
-    let mut last_date = NaiveDate::MIN;
     for account in accounts {
         spinner.set_message(format!("Loading account {}", account.name));
         spinner.tick();
-
-        // Get account ID
-        let account_id = conn.add_account(account.name.clone()).await?;
 
         let account_spinner = progress.add(ProgressBar::no_length());
         account_spinner.set_style(ProgressStyle::default_spinner());
@@ -103,7 +106,7 @@ pub async fn import_data(
 
                 if let Some(tid) = transaction.transaction_id.as_ref()
                     && tid.contains(".")
-                    && transaction.amount == 0.0
+                    && transaction.amount.is_zero()
                 {
                     // Weird multiline transaction. Extra lines don't contain much useful information
                     continue;
@@ -123,37 +126,13 @@ pub async fn import_data(
                     continue;
                 }
 
-                if transaction.date_posted < first_date {
-                    first_date = transaction.date_posted;
-                }
-
-                if transaction.date_posted > last_date {
-                    last_date = transaction.date_posted;
-                }
-
-                conn.add_transaction(account_id, categorization, transaction)
+                conn.add_transaction(&account.name, categorization, transaction)
                     .await?;
             }
         }
 
         account_spinner.finish();
         progress.remove(&account_spinner);
-    }
-
-    spinner.set_message("Loading metadata");
-
-    // Add categories
-    for (category, income) in categorizer.categories() {
-        conn.add_category(category, *income).await?;
-    }
-
-    spinner.tick();
-
-    // Fill date range
-    let mut add_date = first_date;
-    while add_date <= last_date {
-        conn.add_date(add_date).await?;
-        add_date = add_date + Days::new(1);
     }
 
     spinner.finish();

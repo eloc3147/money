@@ -12,9 +12,6 @@ color-eyre = "0.6.3"
 console = "0.16.0"
 indicatif = "0.18.0"
 
-# Argument parsing
-clap = "4.5.49"
-
 # OS Info
 dirs = "6.0.0"
 
@@ -26,20 +23,16 @@ encoding_rs = "0.8.35"
 chrono = "0.4.40"
 self_cell = "1.2.0"
 patricia_tree = "0.10.1"
+rust_decimal = "1.39.0"
 
 # Data store
 sqlx = { version = "=0.8.6", default-features = false, features = [
     "runtime-tokio",
-    "sqlite",
+    "postgres",
+    "chrono",
+    "rust_decimal",
 ] }
-num_enum = "0.7.4"
 
 # Web Server
-axum = { version = "0.8.4", default-features = false, features = [
-    "json",
-    "tokio",
-    "http1",
-] }
-tower-http = { version = "0.6", features = ["fs"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 futures = "0.3"

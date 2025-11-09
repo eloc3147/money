@@ -1,21 +1,21 @@
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 
 use color_eyre::Result;
 use color_eyre::eyre::{OptionExt, bail};
 use patricia_tree::GenericPatriciaMap;
 
-use crate::importer::TransactionType;
-use crate::importer::config::{
-    NameSource, TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode,
+use crate::config::{
+    IncomeType, NameSource, TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode,
     UserTransactionType,
 };
+use crate::importer::TransactionType;
 
 #[derive(Debug, Clone)]
 struct TransactionDecoder {
     transaction_type: UserTransactionType,
     name_source: NameSource,
-    income: bool,
+    income: IncomeType,
     categories: HashMap<&'static str, PatternCategory>,
 }
 
@@ -35,7 +35,7 @@ pub struct MissingRuleInfo {
 
 #[derive(Debug, Clone, Copy)]
 pub struct CategorizationResult {
-    pub income: bool,
+    pub income: IncomeType,
     pub ignore: bool,
     pub category: &'static str,
 }
@@ -47,8 +47,6 @@ pub struct Categorizer {
     /// Mapping of account_name to a mapping between transaction types and decoders
     /// `{account_name: {transaction_type: decoder}}`
     source_type_map: HashMap<&'static str, HashMap<TransactionType, TransactionDecoder>>,
-    /// All categories, and whether they are income (true) or expenses (false)
-    categories: HashSet<(&'static str, bool)>,
     /// Count of transactions that could not find a transaction type
     unknown_type_counts: HashMap<MissingTypeInfo, usize>,
     /// Count of transactions that could not find a category
@@ -93,19 +91,13 @@ impl Categorizer {
             }
         }
 
-        let mut used_categories = HashSet::new();
         let mut prefix_map = HashMap::new();
         let mut source_type_map = HashMap::new();
         for type_config in transaction_types {
             let categories = type_categories
-                .get(&type_config.transaction_type).cloned()
+                .get(&type_config.transaction_type)
+                .cloned()
                 .unwrap_or_default();
-
-            for category in categories.values() {
-                if !category.ignore {
-                    used_categories.insert((category.category, type_config.income));
-                }
-            }
 
             let decoder = TransactionDecoder {
                 transaction_type: type_config.transaction_type,
@@ -156,14 +148,9 @@ impl Categorizer {
         Ok(Self {
             prefix_map,
             source_type_map,
-            categories: used_categories,
             unknown_type_counts: HashMap::new(),
             unknown_category_counts: HashMap::new(),
         })
-    }
-
-    pub fn categories(&self) -> &HashSet<(&'static str, bool)> {
-        &self.categories
     }
 
     pub fn categorize(
