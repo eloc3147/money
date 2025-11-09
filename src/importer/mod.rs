@@ -5,7 +5,6 @@ mod csv_file;
 mod qfx_file;
 
 use std::borrow::Cow;
-use std::time::{Duration, Instant};
 
 use categorizer::Categorizer;
 use chrono::NaiveDate;

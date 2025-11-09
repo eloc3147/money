@@ -104,7 +104,7 @@ impl AppConfig {
 
         File::open(path)
             .and_then(|mut f| f.read_to_string(&mut config_text))
-            .wrap_err_with(|| format!("Cannot read config file at {:?}", path))?;
+            .wrap_err_with(|| format!("Cannot read config file at {}", path.display()))?;
 
         toml::from_str(&config_text).wrap_err("Malformed config file")
     }
