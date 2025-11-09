@@ -19,25 +19,31 @@ struct TransactionDecoder {
     categories: HashMap<&'static str, PatternCategory>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct MissingTypeInfo {
-    pub account: String,
-    pub source_type: TransactionType,
-    pub name: String,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct MissingRuleInfo {
-    pub account: String,
-    pub transaction_type: UserTransactionType,
-    pub display: String,
-}
-
 #[derive(Debug, Clone, Copy)]
-pub struct CategorizationResult {
+pub struct Categorization {
     pub income: IncomeType,
     pub ignore: bool,
     pub category: &'static str,
+}
+
+#[derive(Debug)]
+pub enum UncategorizedTransaction {
+    MissingType {
+        account: String,
+        source_type: TransactionType,
+        name: String,
+    },
+    MissingRule {
+        account: String,
+        transaction_type: UserTransactionType,
+        display: String,
+    },
+}
+
+#[derive(Debug)]
+pub enum CategorizationStatus {
+    Categorized(Categorization),
+    Uncategorized(UncategorizedTransaction),
 }
 
 pub struct Categorizer {
@@ -47,10 +53,6 @@ pub struct Categorizer {
     /// Mapping of account_name to a mapping between transaction types and decoders
     /// `{account_name: {transaction_type: decoder}}`
     source_type_map: HashMap<&'static str, HashMap<TransactionType, TransactionDecoder>>,
-    /// Count of transactions that could not find a transaction type
-    unknown_type_counts: HashMap<MissingTypeInfo, usize>,
-    /// Count of transactions that could not find a category
-    unknown_category_counts: HashMap<MissingRuleInfo, usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -148,18 +150,16 @@ impl Categorizer {
         Ok(Self {
             prefix_map,
             source_type_map,
-            unknown_type_counts: HashMap::new(),
-            unknown_category_counts: HashMap::new(),
         })
     }
 
     pub fn categorize(
-        &mut self,
+        &self,
         account: &str,
         name: &str,
         transaction_tye: TransactionType,
         memo: Option<&str>,
-    ) -> Result<Option<CategorizationResult>> {
+    ) -> Result<CategorizationStatus> {
         let prefix_match = self
             .prefix_map
             .get(account)
@@ -179,17 +179,13 @@ impl Categorizer {
             (None, Some(d)) => d,
             (Some(_), Some(_)) => bail!("todo"),
             (None, None) => {
-                let count = self
-                    .unknown_type_counts
-                    .entry(MissingTypeInfo {
+                return Ok(CategorizationStatus::Uncategorized(
+                    UncategorizedTransaction::MissingType {
                         account: account.to_string(),
                         source_type: transaction_tye,
                         name: name.to_string(),
-                    })
-                    .or_default();
-
-                *count += 1;
-                return Ok(None);
+                    },
+                ));
             }
         };
 
@@ -208,33 +204,19 @@ impl Categorizer {
         display_name = display_name.trim();
 
         let Some(category) = decoder.categories.get(display_name) else {
-            let count = self
-                .unknown_category_counts
-                .entry(MissingRuleInfo {
+            return Ok(CategorizationStatus::Uncategorized(
+                UncategorizedTransaction::MissingRule {
                     account: account.to_string(),
                     transaction_type: decoder.transaction_type,
                     display: display_name.to_string(),
-                })
-                .or_default();
-
-            *count += 1;
-
-            return Ok(None);
+                },
+            ));
         };
 
-        Ok(Some(CategorizationResult {
+        Ok(CategorizationStatus::Categorized(Categorization {
             income: decoder.income,
             ignore: category.ignore,
             category: category.category,
         }))
-    }
-
-    pub fn get_missing_stats(
-        &self,
-    ) -> (
-        &HashMap<MissingTypeInfo, usize>,
-        &HashMap<MissingRuleInfo, usize>,
-    ) {
-        (&self.unknown_type_counts, &self.unknown_category_counts)
     }
 }

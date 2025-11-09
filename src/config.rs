@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,30 @@ pub enum UserTransactionType {
     Interest,
     BankFee,
     ChequeDeposit,
+}
+
+impl UserTransactionType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::DebitPurchase => "DebitPurchase",
+            Self::DebitRefund => "DebitRefund",
+            Self::CreditPurchase => "CreditPurchase",
+            Self::CreditRefund => "CreditRefund",
+            Self::VisaDebitPurchase => "VisaDebitPurchase",
+            Self::VisaDebitRefund => "VisaDebitRefund",
+            Self::SentEtransfer => "SentEtransfer",
+            Self::ReceivedEtransfer => "ReceivedEtransfer",
+            Self::CancelledEtransfer => "CancelledEtransfer",
+            Self::InterAccountTransfer => "InterAccountTransfer",
+            Self::SentDirectDeposit => "SentDirectDeposit",
+            Self::ReceivedDirectDeposit => "ReceivedDirectDeposit",
+            Self::AtmWithdrawal => "AtmWithdrawal",
+            Self::AtmDeposit => "AtmDeposit",
+            Self::Interest => "Interest",
+            Self::BankFee => "BankFee",
+            Self::ChequeDeposit => "ChequeDeposit",
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]

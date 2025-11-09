@@ -1,21 +1,21 @@
 // Compatible with Capital One CSV files
 
 use std::borrow::Cow;
-use std::fs::File;
 use std::path::Path;
 
 use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail};
-use csv::{Reader, StringRecord, StringRecordsIter};
+use csv_async::{AsyncReader, StringRecord};
+use futures::{Stream, StreamExt};
 use rust_decimal::Decimal;
+use tokio::fs::File;
+use tokio::io::BufReader;
 
 use crate::importer::{Transaction, TransactionType};
 
-pub struct CsvTransaction {
-    // transaction_date: NaiveDate,
+struct CsvTransaction {
     posted_date: NaiveDate,
-    // card_number: u16,
     description: String,
     category: String,
     debit: Option<Decimal>,
@@ -46,13 +46,15 @@ impl<'a> CsvTransaction {
 }
 
 pub struct CsvReader {
-    reader: Reader<File>,
+    reader: AsyncReader<BufReader<File>>,
     columns: ColumnMap,
 }
 
 impl<'a> CsvReader {
-    pub fn open(path: &Path) -> Result<Self> {
-        let mut reader = Reader::from_reader(File::open(path).wrap_err("Failed to open file")?);
+    pub async fn open(path: &Path) -> Result<Self> {
+        let mut reader = AsyncReader::from_reader(BufReader::new(
+            File::open(path).await.wrap_err("Failed to open file")?,
+        ));
 
         let mut transaction_date_col = None;
         let mut posted_date_col = None;
@@ -61,7 +63,7 @@ impl<'a> CsvReader {
         let mut category_col = None;
         let mut debit_col = None;
         let mut credit_col = None;
-        let headers = reader.headers().wrap_err("Failed to read headers")?;
+        let headers = reader.headers().await.wrap_err("Failed to read headers")?;
         for (idx, header) in headers.iter().enumerate() {
             match header.trim() {
                 "Transaction Date" => {
@@ -123,43 +125,16 @@ impl<'a> CsvReader {
         Ok(Self { reader, columns })
     }
 
-    pub fn read(&'a mut self) -> Result<CsvTransactionIter<'a>> {
-        Ok(CsvTransactionIter {
-            records: self.reader.records(),
-            columns: &self.columns,
+    pub fn read(self) -> impl Stream<Item = Result<Transaction<'a>>> {
+        self.reader.into_records().map(move |r| {
+            r.wrap_err("Failed to read row").and_then(|row| {
+                self.columns
+                    .unpack_transaction(row)
+                    .wrap_err("Failed to unpack CsvTransaction from row")
+                    .and_then(|t| t.into_transaction())
+                    .wrap_err("Failed to convert CsvTransaction")
+            })
         })
-    }
-}
-
-pub struct CsvTransactionIter<'a> {
-    records: StringRecordsIter<'a, File>,
-    columns: &'a ColumnMap,
-}
-
-impl<'a> CsvTransactionIter<'a> {
-    fn next_transaction(&mut self) -> Result<Option<Transaction<'a>>> {
-        let Some(record) = self.records.next() else {
-            return Ok(None);
-        };
-
-        let csv_transaction = self
-            .columns
-            .unpack_transaction(record.wrap_err("Failed to read CSV row")?)
-            .wrap_err("Failed to unpack CsvTransaction from row")?;
-
-        let transaction = csv_transaction
-            .into_transaction()
-            .wrap_err("Failed to convert CsvTransaction")?;
-
-        Ok(Some(transaction))
-    }
-}
-
-impl<'a> Iterator for CsvTransactionIter<'a> {
-    type Item = Result<Transaction<'a>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_transaction().transpose()
     }
 }
 
@@ -175,23 +150,12 @@ struct ColumnMap {
 
 impl ColumnMap {
     fn unpack_transaction(&self, record: StringRecord) -> Result<CsvTransaction> {
-        // let transaction_date = record
-        //     .get(self.transaction_date_col)
-        //     .ok_or_eyre("Failed to get transaction_date column")
-        //     .and_then(|s| {
-        //         NaiveDate::parse_from_str(s, "%Y-%m-%d")
-        //             .wrap_err("Failed to parse transaction_date")
-        //     })?;
         let posted_date = record
             .get(self.posted_date_col)
             .ok_or_eyre("Failed to get posted_date column")
             .and_then(|s| {
                 NaiveDate::parse_from_str(s, "%Y-%m-%d").wrap_err("Failed to parse posted_date")
             })?;
-        // let card_number = record
-        //     .get(self.card_number_col)
-        //     .ok_or_eyre("Failed to get card_number column")
-        //     .and_then(|s| s.parse().wrap_err("Failed to parse card_number"))?;
         let description = record
             .get(self.description_col)
             .ok_or_eyre("Failed to get description column")
@@ -210,9 +174,7 @@ impl ColumnMap {
             .and_then(|s| parse_optional_amount(s).wrap_err("Failed to parse credit"))?;
 
         Ok(CsvTransaction {
-            // transaction_date,
             posted_date,
-            // card_number,
             description,
             category,
             debit,

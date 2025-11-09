@@ -1,14 +1,18 @@
+use std::borrow::Cow;
+
+use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::Context;
+use rust_decimal::Decimal;
 use sqlx::pool::{PoolConnection, PoolOptions};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{PgPool, Postgres};
 
 use crate::config::{DatabaseConfig, IncomeType};
 use crate::importer::Transaction;
-use crate::importer::categorizer::CategorizationResult;
+use crate::importer::categorizer::{Categorization, UncategorizedTransaction};
 
-pub async fn build(config: &DatabaseConfig) -> Result<PgPool> {
+pub async fn build(config: &DatabaseConfig) -> Result<Db> {
     let options = PgConnectOptions::new()
         .host(&config.host)
         .port(config.port)
@@ -26,6 +30,7 @@ pub async fn build(config: &DatabaseConfig) -> Result<PgPool> {
     sqlx::raw_sql(
         "
         DROP TABLE IF EXISTS transactions;
+        DROP TABLE IF EXISTS uncategorized_transactions;
 
         CREATE TABLE transactions (
             id               serial PRIMARY KEY,
@@ -41,24 +46,83 @@ pub async fn build(config: &DatabaseConfig) -> Result<PgPool> {
             name             text NOT NULL,
             memo             text
         );
+
+        CREATE TABLE uncategorized_transactions (
+            id           serial PRIMARY KEY,
+            missing_rule boolean,
+            account      text NOT NULL,
+            type         text NOT NULL,
+            message      text NOT NULL
+        );
         ",
     )
     .execute(&mut *conn)
     .await
     .wrap_err("Failed to setup database tables")?;
 
-    Ok(pool)
+    Ok(Db { pool })
 }
 
-pub struct DbConnection {
-    pub conn: PoolConnection<Postgres>,
+pub struct Db {
+    pool: PgPool,
 }
 
-impl<'a> DbConnection {
+impl<'a> Db {
+    pub async fn open_handle(&self) -> Result<DbHandle> {
+        let conn = self.pool.acquire().await?;
+        Ok(DbHandle { conn })
+    }
+}
+
+pub struct DbHandle {
+    conn: PoolConnection<Postgres>,
+}
+
+impl<'a> DbHandle {
+    pub async fn add_uncategorized_transaction(
+        &mut self,
+        transaction: UncategorizedTransaction,
+    ) -> Result<()> {
+        let (missing_rule, account, missing_type, message) = match transaction {
+            UncategorizedTransaction::MissingType {
+                account,
+                source_type,
+                name,
+            } => (false, account, source_type.name(), name),
+            UncategorizedTransaction::MissingRule {
+                account,
+                transaction_type,
+                display,
+            } => (true, account, transaction_type.name(), display),
+        };
+
+        sqlx::query(
+            "INSERT INTO uncategorized_transactions (
+                missing_rule,
+                account,
+                type,
+                message
+            ) values (
+                ?1,
+                ?2,
+                ?3,
+                ?4
+            );",
+        )
+        .bind(missing_rule)
+        .bind(account)
+        .bind(missing_type)
+        .bind(message)
+        .execute(&mut *self.conn)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn add_transaction(
         &mut self,
         account: &str,
-        categorization: CategorizationResult,
+        categorization: Categorization,
         transaction: Transaction<'a>,
     ) -> Result<()> {
         let base_category = categorization.category.split('.').next().unwrap();
