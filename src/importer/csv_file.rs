@@ -7,12 +7,12 @@ use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail};
 use csv_async::{AsyncReader, StringRecord};
-use futures::{Stream, StreamExt};
+use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-use crate::importer::{Transaction, TransactionType};
+use crate::importer::{Transaction, TransactionImporter, TransactionReader, TransactionType};
 
 struct CsvTransaction {
     posted_date: NaiveDate,
@@ -124,17 +124,24 @@ impl<'a> CsvReader {
 
         Ok(Self { reader, columns })
     }
+}
 
-    pub fn read(self) -> impl Stream<Item = Result<Transaction<'a>>> {
-        self.reader.into_records().map(move |r| {
-            r.wrap_err("Failed to read row").and_then(|row| {
-                self.columns
-                    .unpack_transaction(row)
-                    .wrap_err("Failed to unpack CsvTransaction from row")
-                    .and_then(|t| t.into_transaction())
-                    .wrap_err("Failed to convert CsvTransaction")
-            })
-        })
+impl TransactionReader for CsvReader {
+    async fn load(self, mut importer: TransactionImporter<'_>) -> Result<()> {
+        let mut records = self.reader.into_records();
+
+        while let Some(row) = records.try_next().await.wrap_err("Failed to read row")? {
+            let transaction = self
+                .columns
+                .unpack_transaction(row)
+                .wrap_err("Failed to unpack CsvTransaction from row")
+                .and_then(|t| t.into_transaction())
+                .wrap_err("Failed to convert CsvTransaction")?;
+
+            importer.import(transaction).await?;
+        }
+
+        Ok(())
     }
 }
 

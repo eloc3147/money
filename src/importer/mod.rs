@@ -16,8 +16,9 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::config::AccountConfig;
-use crate::db::Db;
+use crate::db::{Db, DbHandle};
 use crate::importer::categorizer::CategorizationStatus;
+use crate::importer::qfx_file::QfxReader;
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum TransactionType {
@@ -90,11 +91,57 @@ async fn list_accounts(
     Ok(())
 }
 
+pub trait TransactionReader {
+    async fn load(self, importer: TransactionImporter<'_>) -> Result<()>;
+}
+
 struct ImportConfig<'a> {
     db: &'a Db,
     categorizer: &'a Categorizer,
     account_name: String,
     file_path: PathBuf,
+}
+
+pub struct TransactionImporter<'c> {
+    conn: DbHandle,
+    categorizer: &'c Categorizer,
+    account_name: String,
+}
+
+impl<'c> TransactionImporter<'c> {
+    pub async fn import<'t>(&mut self, transaction: Transaction<'t>) -> Result<()> {
+        if let Some(tid) = transaction.transaction_id.as_ref()
+            && tid.contains(".")
+            && transaction.amount.is_zero()
+        {
+            // Weird multiline transaction. Extra lines don't contain much useful information
+            return Ok(());
+        }
+
+        let categorization_result = self.categorizer.categorize(
+            &self.account_name,
+            &transaction.name,
+            transaction.transaction_type,
+            transaction.memo.as_ref().map(|m| m.as_ref()),
+        )?;
+        let categorization = match categorization_result {
+            CategorizationStatus::Categorized(c) => c,
+            CategorizationStatus::Uncategorized(t) => {
+                self.conn.add_uncategorized_transaction(t).await?;
+                return Ok(());
+            }
+        };
+
+        if categorization.ignore {
+            return Ok(());
+        }
+
+        self.conn
+            .add_transaction(&self.account_name, categorization, transaction)
+            .await?;
+
+        Ok(())
+    }
 }
 
 async fn import_file(config: ImportConfig<'_>) -> Result<()> {
@@ -104,65 +151,39 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
         .ok_or_else(|| eyre!("File missing extension: {:?}", config.file_path))?
         .to_ascii_lowercase();
 
-    let mut transactions = match &*ext.to_string_lossy() {
-        "qfx" => {
-            // let reader = QfxReader::open(&config.file_path).wrap_err_with(|| {
-            //     format!(
-            //         "Failed to open file: {}",
-            //         config.file_path.to_string_lossy()
-            //     )
-            // })?;
-            //
-            // tokio_stream::iter(reader.read().wrap_err("Failed to read transactions")?).boxed()
-            return Ok(());
-        }
-        "csv" => CsvReader::open(&config.file_path)
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "Failed to open file: {}",
-                    config.file_path.to_string_lossy()
-                )
-            })?
-            .read()
-            .boxed(),
-        ext => return Err(eyre!("Unrecognized file type: {}", ext)),
+    let importer = TransactionImporter {
+        conn: config.db.open_handle().await?,
+        categorizer: config.categorizer,
+        account_name: config.account_name,
     };
 
-    let mut conn = config.db.open_handle().await?;
-
-    while let Some(transaction) = transactions.try_next().await? {
-        if let Some(tid) = transaction.transaction_id.as_ref()
-            && tid.contains(".")
-            && transaction.amount.is_zero()
-        {
-            // Weird multiline transaction. Extra lines don't contain much useful information
-            continue;
+    match &*ext.to_string_lossy() {
+        "qfx" => {
+            QfxReader::open(&config.file_path)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Failed to open file: {}",
+                        config.file_path.to_string_lossy()
+                    )
+                })?
+                .load(importer)
+                .await
         }
-
-        let categorization_result = config.categorizer.categorize(
-            &config.account_name,
-            &transaction.name,
-            transaction.transaction_type,
-            transaction.memo.as_ref().map(|m| m.as_ref()),
-        )?;
-        let categorization = match categorization_result {
-            CategorizationStatus::Categorized(c) => c,
-            CategorizationStatus::Uncategorized(t) => {
-                conn.add_uncategorized_transaction(t).await?;
-                continue;
-            }
-        };
-
-        if categorization.ignore {
-            continue;
+        "csv" => {
+            CsvReader::open(&config.file_path)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Failed to open file: {}",
+                        config.file_path.to_string_lossy()
+                    )
+                })?
+                .load(importer)
+                .await
         }
-
-        conn.add_transaction(&config.account_name, categorization, transaction)
-            .await?;
+        ext => return Err(eyre!("Unrecognized file type: {}", ext)),
     }
-
-    Ok(())
 }
 
 pub async fn import_files(

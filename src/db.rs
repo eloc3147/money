@@ -103,10 +103,10 @@ impl<'a> DbHandle {
                 type,
                 message
             ) values (
-                ?1,
-                ?2,
-                ?3,
-                ?4
+                $1,
+                $2,
+                $3,
+                $4
             );",
         )
         .bind(missing_rule)
@@ -119,11 +119,11 @@ impl<'a> DbHandle {
         Ok(())
     }
 
-    pub async fn add_transaction(
-        &mut self,
+    pub async fn add_transaction<'t>(
+        &'t mut self,
         account: &str,
         categorization: Categorization,
-        transaction: Transaction<'a>,
+        transaction: Transaction<'t>,
     ) -> Result<()> {
         let base_category = categorization.category.split('.').next().unwrap();
         let income = match categorization.income {
