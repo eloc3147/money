@@ -100,7 +100,7 @@ async fn list_accounts(
 }
 
 pub trait TransactionReader {
-    async fn load(self, importer: TransactionImporter<'_>) -> Result<()>;
+    async fn load(self, importer: TransactionImporter<'_>, progress: &ProgressBar) -> Result<()>;
 }
 
 struct ImportConfig<'a> {
@@ -161,7 +161,9 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
         .ok_or_else(|| eyre!("File missing extension: {:?}", config.file_path))?
         .to_ascii_lowercase();
 
-    let style = ProgressStyle::with_template("[{elapsed:.white}] {spinner:.green} {msg}").unwrap();
+    let style =
+        ProgressStyle::with_template("[{elapsed:.white}] {spinner:.green} {pos:>6.cyan} {msg}")
+            .unwrap();
 
     let progress = config
         .multi_progress
@@ -176,7 +178,6 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
             .and_then(|n| n.to_str())
             .unwrap_or("")
     ));
-    progress.enable_steady_tick(Duration::from_millis(250));
 
     let importer = TransactionImporter {
         conn: config.db.open_handle().await?,
@@ -194,7 +195,7 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
                         config.file_path.to_string_lossy()
                     )
                 })?
-                .load(importer)
+                .load(importer, &progress)
                 .await?;
         }
         "csv" => {
@@ -206,7 +207,7 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
                         config.file_path.to_string_lossy()
                     )
                 })?
-                .load(importer)
+                .load(importer, &progress)
                 .await?;
         }
         ext => return Err(eyre!("Unrecognized file type: {}", ext)),

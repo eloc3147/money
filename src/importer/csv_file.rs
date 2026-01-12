@@ -8,6 +8,7 @@ use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail};
 use csv_async::{AsyncReader, StringRecord};
 use futures::TryStreamExt;
+use indicatif::ProgressBar;
 use rust_decimal::Decimal;
 use tokio::fs::File;
 use tokio::io::BufReader;
@@ -127,9 +128,14 @@ impl CsvReader {
 }
 
 impl TransactionReader for CsvReader {
-    async fn load(self, mut importer: TransactionImporter<'_>) -> Result<()> {
+    async fn load(
+        self,
+        mut importer: TransactionImporter<'_>,
+        progress: &ProgressBar,
+    ) -> Result<()> {
         let mut records = self.reader.into_records();
 
+        let mut i = 0usize;
         while let Some(row) = records.try_next().await.wrap_err("Failed to read row")? {
             let transaction = self
                 .columns
@@ -139,6 +145,12 @@ impl TransactionReader for CsvReader {
                 .wrap_err("Failed to convert CsvTransaction")?;
 
             importer.import(transaction).await?;
+
+            if i % 100 == 0 {
+                progress.inc(100);
+            }
+
+            i += 1;
         }
 
         Ok(())

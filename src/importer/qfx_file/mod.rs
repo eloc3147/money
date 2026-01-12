@@ -10,6 +10,7 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail, eyre};
+use indicatif::ProgressBar;
 use rust_decimal::Decimal;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -91,10 +92,15 @@ impl QfxReader {
 }
 
 impl TransactionReader for QfxReader {
-    async fn load(self, mut importer: TransactionImporter<'_>) -> Result<()> {
+    async fn load(
+        self,
+        mut importer: TransactionImporter<'_>,
+        progress: &ProgressBar,
+    ) -> Result<()> {
         let lexer = Lexer::new(self.contents, self.encoding, self.is_xml);
         let parser = DocumentParser::new(lexer);
 
+        let mut i = 0usize;
         while let Some(transaction) = parser.next_statement_transaction()? {
             let file_transaction_type = match transaction.transaction_type {
                 QfxTransactionType::Debit => TransactionType::Debit,
@@ -117,6 +123,12 @@ impl TransactionReader for QfxReader {
                     memo: transaction.memo,
                 })
                 .await?;
+
+            if i % 100 == 0 {
+                progress.inc(100);
+            }
+
+            i += 1;
         }
 
         Ok(())
