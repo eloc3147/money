@@ -4,12 +4,15 @@ mod qfx_file;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use categorizer::Categorizer;
 use chrono::NaiveDate;
 use color_eyre::eyre::{Context, Result, eyre};
+use console::Emoji;
 use csv_file::CsvReader;
 use futures::{StreamExt, TryStreamExt};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
@@ -57,6 +60,7 @@ pub struct Transaction<'a> {
 async fn list_accounts(
     accounts: &[AccountConfig],
     file_queue: Sender<(String, PathBuf)>,
+    list_progress: &ProgressBar,
 ) -> Result<()> {
     let mut stack = Vec::new();
     for account in accounts {
@@ -71,6 +75,8 @@ async fn list_accounts(
                 if entry_type.is_dir() {
                     stack.push(entry.path());
                 } else if entry_type.is_file() {
+                    list_progress.inc_length(1);
+
                     file_queue
                         .send((account.name.clone(), entry.path()))
                         .await?;
@@ -79,6 +85,8 @@ async fn list_accounts(
                     let new_meta = tokio::fs::metadata(&new_path).await?;
 
                     if new_meta.is_file() {
+                        list_progress.inc_length(1);
+
                         file_queue.send((account.name.clone(), new_path)).await?;
                     } else if new_meta.is_dir() {
                         stack.push(entry.path());
@@ -100,6 +108,8 @@ struct ImportConfig<'a> {
     categorizer: &'a Categorizer,
     account_name: String,
     file_path: PathBuf,
+    multi_progress: &'a MultiProgress,
+    list_progress: &'a ProgressBar,
 }
 
 pub struct TransactionImporter<'c> {
@@ -151,6 +161,23 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
         .ok_or_else(|| eyre!("File missing extension: {:?}", config.file_path))?
         .to_ascii_lowercase();
 
+    let style = ProgressStyle::with_template("[{elapsed:.white}] {spinner:.green} {msg}").unwrap();
+
+    let progress = config
+        .multi_progress
+        .insert_before(config.list_progress, ProgressBar::no_length());
+    progress.set_style(style);
+    progress.set_message(format!(
+        "{}Loading: {}",
+        Emoji("📄 ", ""),
+        config
+            .file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+    ));
+    progress.enable_steady_tick(Duration::from_millis(250));
+
     let importer = TransactionImporter {
         conn: config.db.open_handle().await?,
         categorizer: config.categorizer,
@@ -168,7 +195,7 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
                     )
                 })?
                 .load(importer)
-                .await
+                .await?;
         }
         "csv" => {
             CsvReader::open(&config.file_path)
@@ -180,10 +207,15 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
                     )
                 })?
                 .load(importer)
-                .await
+                .await?;
         }
         ext => return Err(eyre!("Unrecognized file type: {}", ext)),
     }
+
+    config.list_progress.inc(1);
+    config.multi_progress.remove(&progress);
+
+    Ok(())
 }
 
 pub async fn import_files(
@@ -194,7 +226,18 @@ pub async fn import_files(
     // Load transactions concurrently
     let (file_tx, file_rx) = tokio::sync::mpsc::channel(8);
 
-    let account_listing = list_accounts(accounts, file_tx);
+    let multi_progress = MultiProgress::new();
+    let list_style = ProgressStyle::with_template(
+        "[{elapsed:.white}] {spinner:.green} {pos:>4.white}/{len:4.white} [{bar:40.cyan}]",
+    )
+    .unwrap()
+    .progress_chars("=> ");
+
+    let list_progress = multi_progress.add(ProgressBar::new(0));
+    list_progress.set_style(list_style);
+    list_progress.enable_steady_tick(Duration::from_millis(250));
+
+    let account_listing = list_accounts(accounts, file_tx, &list_progress);
     let file_loading = ReceiverStream::new(file_rx)
         .map(|(account_name, file_path)| {
             // Funky stuff to get all required state to the concurrent function
@@ -203,6 +246,8 @@ pub async fn import_files(
                 categorizer,
                 account_name,
                 file_path,
+                multi_progress: &multi_progress,
+                list_progress: &list_progress,
             })
         })
         .try_for_each_concurrent(8, import_file);

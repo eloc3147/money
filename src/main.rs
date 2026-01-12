@@ -34,8 +34,8 @@ async fn main() -> Result<()> {
 
     let config_path = data_dir.join("config.toml");
     println!(
-        "{} {}Loading config...",
-        style("[1/4]").bold().dim(),
+        "[{}] {}Loading config...",
+        style("1/4").bold().white(),
         Emoji("📄 ", "")
     );
     let config = load_config(config_path)
@@ -43,16 +43,16 @@ async fn main() -> Result<()> {
         .map(|c| Box::leak(Box::new(c)))?;
 
     println!(
-        "{} {}Building rules...",
-        style("[2/4]").bold().dim(),
+        "[{}] {}Building rules...",
+        style("2/4").bold().white(),
         Emoji("⚙️ ", "")
     );
     let categorizer = Categorizer::build(&config.transaction_type, &config.rule)
         .wrap_err("Failed to load transaction rules")?;
 
     println!(
-        "{} {}Loading transaction files...",
-        style("[3/4]").bold().dim(),
+        "[{}] {}Loading transaction files...",
+        style("3/4").bold().white(),
         Emoji("🏦 ", ""),
     );
     let db_pool = db::build(&config.database)
@@ -62,8 +62,8 @@ async fn main() -> Result<()> {
     importer::import_files(&db_pool, &categorizer, &config.account).await?;
 
     println!(
-        "{} {}Import complete",
-        style("[4/4]").bold().dim(),
+        "[{}] {}Import complete",
+        style("4/4").bold().white(),
         Emoji("✅ ", ""),
     );
 
