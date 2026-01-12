@@ -24,7 +24,7 @@ pub struct QfxReader {
     encoding: StringEncoding,
 }
 
-impl<'a> QfxReader {
+impl QfxReader {
     pub async fn open(path: &Path) -> Result<Self> {
         let mut reader = BufReader::new(File::open(path).await.wrap_err("Failed to open file")?);
 

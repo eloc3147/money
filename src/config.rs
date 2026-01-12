@@ -31,7 +31,7 @@ pub enum UserTransactionType {
 }
 
 impl UserTransactionType {
-    pub fn name(&self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::DebitPurchase => "DebitPurchase",
             Self::DebitRefund => "DebitRefund",

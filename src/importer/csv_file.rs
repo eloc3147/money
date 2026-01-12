@@ -50,7 +50,7 @@ pub struct CsvReader {
     columns: ColumnMap,
 }
 
-impl<'a> CsvReader {
+impl CsvReader {
     pub async fn open(path: &Path) -> Result<Self> {
         let mut reader = AsyncReader::from_reader(BufReader::new(
             File::open(path).await.wrap_err("Failed to open file")?,

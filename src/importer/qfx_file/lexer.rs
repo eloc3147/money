@@ -100,7 +100,7 @@ fn find_token(buf: &[u8]) -> Result<TokenSearch> {
                         // Consume '>'
                         consumed: idx + 1,
                         value_range,
-                        key_type: key_type,
+                        key_type,
                     });
                 }
                 None => bail!("End of key without start of key"),

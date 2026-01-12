@@ -63,7 +63,7 @@ pub struct Db {
     pool: PgPool,
 }
 
-impl<'a> Db {
+impl Db {
     pub async fn open_handle(&self) -> Result<DbHandle> {
         let conn = self.pool.acquire().await?;
         Ok(DbHandle { conn })
@@ -74,7 +74,7 @@ pub struct DbHandle {
     conn: PoolConnection<Postgres>,
 }
 
-impl<'a> DbHandle {
+impl DbHandle {
     pub async fn add_uncategorized_transaction(
         &mut self,
         transaction: UncategorizedTransaction,
