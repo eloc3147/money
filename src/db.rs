@@ -8,7 +8,7 @@ use crate::config::{DatabaseConfig, IncomeType};
 use crate::importer::Transaction;
 use crate::importer::categorizer::{Categorization, UncategorizedTransaction};
 
-pub async fn build(config: &DatabaseConfig) -> Result<Db> {
+pub async fn build(config: &DatabaseConfig, clean: bool) -> Result<Db> {
     let options = PgConnectOptions::new()
         .host(&config.host)
         .port(config.port)
@@ -23,12 +23,27 @@ pub async fn build(config: &DatabaseConfig) -> Result<Db> {
 
     let mut conn = pool.acquire().await.wrap_err("Failed to get DB handle")?;
 
+    if clean {
+        sqlx::raw_sql(
+            "
+            DROP TABLE IF EXISTS loaded_files;
+            DROP TABLE IF EXISTS transactions;
+            DROP TABLE IF EXISTS uncategorized_transactions;
+            ",
+        )
+        .execute(&mut *conn)
+        .await
+        .wrap_err("Failed to setup database tables")?;
+    }
+
     sqlx::raw_sql(
         "
-        DROP TABLE IF EXISTS transactions;
-        DROP TABLE IF EXISTS uncategorized_transactions;
+        CREATE TABLE IF NOT EXISTS loaded_files (
+            id               serial PRIMARY KEY,
+            file_path        text NOT NULL
+        );
 
-        CREATE TABLE transactions (
+        CREATE TABLE IF NOT EXISTS transactions (
             id               serial PRIMARY KEY,
             account          text NOT NULL,
             base_category    text NOT NULL,
@@ -43,7 +58,7 @@ pub async fn build(config: &DatabaseConfig) -> Result<Db> {
             memo             text
         );
 
-        CREATE TABLE uncategorized_transactions (
+        CREATE TABLE IF NOT EXISTS uncategorized_transactions (
             id           serial PRIMARY KEY,
             missing_rule boolean,
             account      text NOT NULL,
@@ -75,6 +90,24 @@ pub struct DbHandle {
 }
 
 impl DbHandle {
+    pub async fn add_loaded_file(&mut self, file_name: &str) -> Result<()> {
+        sqlx::query("INSERT INTO loaded_files (file_path) values ($1);")
+            .bind(file_name)
+            .execute(&mut *self.conn)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn check_loaded_file(&mut self, file_name: &str) -> Result<bool> {
+        let existing_file = sqlx::query("SELECT (id) FROM loaded_files WHERE file_path = $1;")
+            .bind(file_name)
+            .fetch_optional(&mut *self.conn)
+            .await?;
+
+        Ok(existing_file.is_some())
+    }
+
     pub async fn add_uncategorized_transaction(
         &mut self,
         transaction: UncategorizedTransaction,

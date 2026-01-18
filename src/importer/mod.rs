@@ -155,6 +155,22 @@ impl<'c> TransactionImporter<'c> {
 }
 
 async fn import_file(config: ImportConfig<'_>) -> Result<()> {
+    let mut db_handle = config.db.open_handle().await?;
+
+    let file_name = config
+        .file_path
+        .file_name()
+        .ok_or_else(|| eyre!("Missing file name: {:?}", config.file_path))?
+        .to_str()
+        .ok_or_else(|| eyre!("Filename is not valid utf-8: {:?}", config.file_path))?;
+
+    if db_handle.check_loaded_file(file_name).await? {
+        config.list_progress.inc(1);
+        return Ok(());
+    }
+
+    db_handle.add_loaded_file(file_name).await?;
+
     let ext = config
         .file_path
         .extension()
@@ -180,7 +196,7 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
     ));
 
     let importer = TransactionImporter {
-        conn: config.db.open_handle().await?,
+        conn: db_handle,
         categorizer: config.categorizer,
         account_name: config.account_name,
     };

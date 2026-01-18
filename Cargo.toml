@@ -12,9 +12,10 @@ futures = "0.3"
 tokio-stream = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 
-# Pretty printing
+# CLI
 console = "0.16.0"
 indicatif = "0.18.0"
+clap = { version = "4.5.54", features = ["derive"] }
 
 # OS Info
 dirs = "6.0.0"

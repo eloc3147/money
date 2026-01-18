@@ -5,6 +5,7 @@ mod importer;
 
 use std::path::PathBuf;
 
+use clap::Parser;
 use color_eyre::Result;
 use color_eyre::eyre::{Context, eyre};
 use config::AppConfig;
@@ -17,6 +18,15 @@ async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
         .wrap_err("Failed to load config")
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+/// A simple expense tracking program
+struct Args {
+    /// Clear the database and re-import all transactions
+    #[arg(long)]
+    clean: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
@@ -25,6 +35,8 @@ async fn main() -> Result<()> {
         "{}",
         style(concat!("Money v", env!("CARGO_PKG_VERSION"))).white()
     );
+
+    let args = Args::parse();
 
     let data_dir = dirs::data_dir()
         .ok_or_else(|| eyre!("OS user data directory missing"))?
@@ -55,7 +67,7 @@ async fn main() -> Result<()> {
         style("3/4").bold().white(),
         Emoji("🏦 ", ""),
     );
-    let db_pool = db::build(&config.database)
+    let db_pool = db::build(&config.database, args.clean)
         .await
         .wrap_err("Failed to setup DB")?;
 
