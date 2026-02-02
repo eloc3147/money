@@ -3,8 +3,10 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use chrono::NaiveDate;
 use color_eyre::Result;
 use color_eyre::eyre::Context;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::importer::TransactionType;
@@ -116,11 +118,25 @@ pub struct DatabaseConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BudgetRule {
+    pub category: String,
+    pub limit: Decimal,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BudgetConfig {
+    pub name: String,
+    pub start_date: NaiveDate,
+    pub rules: Vec<BudgetRule>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AppConfig {
     pub database: DatabaseConfig,
     pub account: Vec<AccountConfig>,
     pub transaction_type: Vec<TransactionTypeConfig>,
     pub rule: Vec<TransactionRuleConfig>,
+    pub budget: Vec<BudgetConfig>,
 }
 
 impl AppConfig {

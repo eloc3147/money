@@ -12,10 +12,51 @@ use config::AppConfig;
 use console::{Emoji, style};
 use importer::categorizer::Categorizer;
 
+use crate::config::BudgetConfig;
+use crate::db::Db;
+
 async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
     tokio::task::spawn_blocking(move || AppConfig::load(&config_path))
         .await?
         .wrap_err("Failed to load config")
+}
+
+async fn build_budgets(db: &Db, configs: &[BudgetConfig]) -> Result<()> {
+    let mut iter = configs.iter();
+    let Some(mut previous) = iter.next() else {
+        return Ok(());
+    };
+
+    let mut handle = db.open_handle().await?;
+    while let Some(config) = iter.next() {
+        for rule in &previous.rules {
+            handle
+                .add_budget(
+                    &previous.name,
+                    previous.start_date,
+                    Some(config.start_date),
+                    &rule.category,
+                    rule.limit,
+                )
+                .await?;
+        }
+
+        previous = config;
+    }
+
+    for rule in &previous.rules {
+        handle
+            .add_budget(
+                &previous.name,
+                previous.start_date,
+                None,
+                &rule.category,
+                rule.limit,
+            )
+            .await?;
+    }
+
+    Ok(())
 }
 
 #[derive(Parser, Debug)]
@@ -47,7 +88,7 @@ async fn main() -> Result<()> {
     let config_path = data_dir.join("config.toml");
     println!(
         "[{}] {}Loading config...",
-        style("1/4").bold().white(),
+        style("1/5").bold().white(),
         Emoji("📄 ", "")
     );
     let config = load_config(config_path)
@@ -56,26 +97,34 @@ async fn main() -> Result<()> {
 
     println!(
         "[{}] {}Building rules...",
-        style("2/4").bold().white(),
+        style("2/5").bold().white(),
         Emoji("⚙️ ", "")
     );
     let categorizer = Categorizer::build(&config.transaction_type, &config.rule)
         .wrap_err("Failed to load transaction rules")?;
 
     println!(
-        "[{}] {}Loading transaction files...",
-        style("3/4").bold().white(),
-        Emoji("🏦 ", ""),
+        "[{}] {}Updating Budgets...",
+        style("3/5").bold().white(),
+        Emoji("📊 ", "")
     );
     let db_pool = db::build(&config.database, args.clean)
         .await
         .wrap_err("Failed to setup DB")?;
 
+    build_budgets(&db_pool, &config.budget).await?;
+
+    println!(
+        "[{}] {}Loading transaction files...",
+        style("4/5").bold().white(),
+        Emoji("🏦 ", ""),
+    );
+
     importer::import_files(&db_pool, &categorizer, &config.account).await?;
 
     println!(
         "[{}] {}Import complete",
-        style("4/4").bold().white(),
+        style("5/5").bold().white(),
         Emoji("✅ ", ""),
     );
 

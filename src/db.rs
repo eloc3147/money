@@ -1,5 +1,7 @@
+use chrono::{Local, NaiveDate, NaiveDateTime};
 use color_eyre::Result;
 use color_eyre::eyre::Context;
+use rust_decimal::Decimal;
 use sqlx::pool::{PoolConnection, PoolOptions};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{PgPool, Postgres};
@@ -7,6 +9,15 @@ use sqlx::{PgPool, Postgres};
 use crate::config::{DatabaseConfig, IncomeType};
 use crate::importer::Transaction;
 use crate::importer::categorizer::{Categorization, UncategorizedTransaction};
+
+fn local_date_to_utc(date: NaiveDate) -> NaiveDateTime {
+    date.and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_local_timezone(Local)
+        .single()
+        .expect("Unable to convert date to datetime")
+        .naive_utc()
+}
 
 pub async fn build(config: &DatabaseConfig, clean: bool) -> Result<Db> {
     let options = PgConnectOptions::new()
@@ -51,7 +62,7 @@ pub async fn build(config: &DatabaseConfig, clean: bool) -> Result<Db> {
             source_category  text,
             income           boolean,
             transaction_type text not null,
-            posted_date      date,
+            posted_date      timestamp,
             amount           NUMERIC(16, 2),
             transaction_id   text,
             name             text NOT NULL,
@@ -64,6 +75,16 @@ pub async fn build(config: &DatabaseConfig, clean: bool) -> Result<Db> {
             account      text NOT NULL,
             type         text NOT NULL,
             message      text NOT NULL
+        );
+
+        DROP TABLE IF EXISTS budgets;
+        CREATE TABLE budgets(
+            id         serial PRIMARY KEY,
+            name       text NOT NULL,
+            start_date timestamp NOT NULL,
+            end_date   timestamp,
+            category   text NOT NULL,
+            amount     NUMERIC(16, 2) 
         );
         ",
     )
@@ -194,7 +215,7 @@ impl DbHandle {
         .bind(transaction.category)
         .bind(income)
         .bind(transaction.transaction_type.name())
-        .bind(transaction.date_posted)
+        .bind(local_date_to_utc(transaction.date_posted))
         .bind(transaction.amount)
         .bind(transaction.transaction_id)
         .bind(transaction.name)
@@ -202,6 +223,41 @@ impl DbHandle {
         .execute(&mut *self.conn)
         .await
         .wrap_err("Failed to add transaction")?;
+
+        Ok(())
+    }
+
+    pub async fn add_budget(
+        &mut self,
+        name: &str,
+        start: NaiveDate,
+        end: Option<NaiveDate>,
+        category: &str,
+        amount: Decimal,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO budgets (
+                name,
+                start_date,
+                end_date,
+                category,
+                amount
+            ) values (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5
+            );",
+        )
+        .bind(name)
+        .bind(local_date_to_utc(start))
+        .bind(end.map(local_date_to_utc))
+        .bind(category)
+        .bind(amount)
+        .execute(&mut *self.conn)
+        .await
+        .wrap_err("Failed to add budget")?;
 
         Ok(())
     }
