@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 use std::cell::Cell;
+use std::fmt::Display;
 use std::ops::Range;
 
-use color_eyre::eyre::{OptionExt, Result, bail};
+use color_eyre::eyre::{OptionExt, Result, bail, eyre};
 use encoding_rs::{Encoding, UTF_8, WINDOWS_1252};
 
 use crate::importer::qfx_file::header::StringEncoding;
 
 #[derive(Debug)]
 pub enum QfxToken<'a> {
-    OpenKey(&'a [u8]),
-    CloseKey(&'a [u8]),
-    Value(Cow<'a, str>),
+    OpenKey(Key<'a>),
+    CloseKey(Key<'a>),
+    Value(Value<'a>),
 }
 
 #[derive(Clone, Copy)]
@@ -57,6 +58,35 @@ fn strip_ascii_range(buf: &[u8], range: Range<usize>) -> Range<usize> {
         end: range.end - trailing,
     }
 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Key<'a>(pub &'a [u8]);
+
+impl<'a> From<&'a [u8]> for Key<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Self(value)
+    }
+}
+
+impl<'a, const N: usize> From<&'a [u8; N]> for Key<'a> {
+    fn from(value: &'a [u8; N]) -> Self {
+        Self(value.as_slice())
+    }
+}
+
+impl<'a, const N: usize> PartialEq<[u8; N]> for Key<'a> {
+    fn eq(&self, other: &[u8; N]) -> bool {
+        self.0 == other.as_slice()
+    }
+}
+
+impl<'a> Display for Key<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        str::fmt(&String::from_utf8_lossy(self.0), f)
+    }
+}
+
+pub type Value<'a> = Cow<'a, str>;
 
 struct TokenSearch {
     consumed: usize,
@@ -147,6 +177,7 @@ pub struct Lexer {
     last_open: Cell<Option<Range<usize>>>,
     consumed: Cell<usize>,
     last_item_was_value: Cell<bool>,
+    failed: Cell<bool>,
 }
 
 impl<'a> Lexer {
@@ -163,14 +194,16 @@ impl<'a> Lexer {
             last_open: Cell::new(None),
             consumed: Cell::new(0),
             last_item_was_value: Cell::new(false),
+            failed: Cell::new(false),
         }
     }
 
-    /// Read the next token from the file
+    /// Try to read the next token from the file, returning [`None`] if the
+    /// end of the file has been reached
     ///
     /// Warning: This must not be called again following an error.
     /// Doing so will cause the lexer to potentially repeat tokens
-    pub fn next(&'a self) -> Result<Option<QfxToken<'a>>> {
+    fn try_next_unguarded(&'a self) -> Result<Option<QfxToken<'a>>> {
         loop {
             let consumed = self.consumed.get();
             if consumed == self.data.len() {
@@ -192,7 +225,7 @@ impl<'a> Lexer {
                         bail!("Empty key");
                     }
 
-                    let value = &self.data[range.clone()];
+                    let value = Key(&self.data[range.clone()]);
                     match key_type {
                         KeyType::Key => {
                             self.last_item_was_value.set(false);
@@ -234,6 +267,74 @@ impl<'a> Lexer {
             };
 
             return Ok(Some(token));
+        }
+    }
+
+    /// Try to read the next token from the file, returning [`None`] if the end
+    /// of the file has been reached
+    pub fn try_next(&'a self) -> Result<Option<QfxToken<'a>>> {
+        if self.failed.get() {
+            bail!("Lexer poisoned");
+        }
+
+        let result = self.try_next_unguarded();
+        if result.is_err() {
+            self.failed.set(true);
+        }
+
+        result
+    }
+
+    /// Read the next token from the file, returning [`Err`] if no more are available
+    pub fn next(&'a self) -> Result<QfxToken<'a>> {
+        self.try_next()?.ok_or_eyre("Unexpected end of file")
+    }
+
+    /// Return [`Err`] if any tokens remain in the file
+    ///
+    /// This can be used to ensure the end of a file has been reached
+    pub fn expect_none(&self) -> Result<()> {
+        match self.try_next()? {
+            Some(v) => Err(eyre!("Unexpected token at end of file: {:?}", v)),
+            None => Ok(()),
+        }
+    }
+
+    /// Read the next token, returning the value if it is a [`Value`][QfxToken::Value] token,
+    /// and returning [`Err`] if not
+    pub fn expect_value(&'a self) -> Result<Value<'a>> {
+        match self.next()? {
+            QfxToken::Value(value) => Ok(value),
+            t => Err(eyre!("Expected value, got: {:?}", t)),
+        }
+    }
+
+    /// Read the next token, returning [`Some(key)`][Option::Some] if it is a
+    /// [`OpenKey`][QfxToken::OpenKey] token,
+    /// [`None`] if it is [`CloseKey(parent_field)`][QfxToken::CloseKey],
+    /// and [`Err`] otherwise
+    pub fn expect_field<'k, T: Into<Key<'k>>>(
+        &'a self,
+        parent_field: T,
+    ) -> Result<Option<Key<'a>>> {
+        let parent = parent_field.into();
+        match self.next()? {
+            QfxToken::OpenKey(key) => Ok(Some(key)),
+            QfxToken::CloseKey(k) if k == parent => Ok(None),
+            QfxToken::CloseKey(k) => Err(eyre!(
+                "Close of field \"{k}\" while inside field \"{parent}\""
+            )),
+            t => Err(eyre!("Expected key, got: {:?}", t)),
+        }
+    }
+
+    /// Raise an error if the next token in the file is not [`CloseKey(key)`][QfxToken::CloseKey]
+    ///
+    /// This should be used to ensure the end of a field has been reached
+    pub fn expect_close(&self, key: Key<'_>) -> Result<()> {
+        match self.next()? {
+            QfxToken::CloseKey(v) if v == key => Ok(()),
+            v => Err(eyre!("Expected close key for \"{key:?}\", got: {v:?}")),
         }
     }
 }

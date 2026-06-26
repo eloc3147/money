@@ -16,7 +16,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
 use crate::importer::qfx_file::header::StringEncoding;
-use crate::importer::qfx_file::lexer::{Lexer, QfxToken};
+use crate::importer::qfx_file::lexer::{Key, Lexer, QfxToken, Value};
 use crate::importer::{Transaction, TransactionImporter, TransactionReader, TransactionType};
 
 pub struct QfxReader {
@@ -151,6 +151,139 @@ impl<T> PutOrElse<T> for Option<T> {
     }
 }
 
+/// Read a type from a lexer
+///
+/// This should expect it's outermost field to have been opened, and must read until it's close
+/// Implementers of this trait must know the keys of any closing tags
+trait ReadQfx<'a> {
+    fn read(lexer: &'a Lexer) -> Result<Self>
+    where
+        Self: Sized;
+}
+
+/// Read a type from a lexer
+///
+/// This should expect it's outermost field to have been opened, and must read until it's close
+/// This trait supplies the name of the opening tag, so it can be used to match a closing tag
+/// This should be used for multiple fields with the same schema
+trait ReadQfxVariable<'a> {
+    fn read<'k>(lexer: &'a Lexer, key: Key<'k>) -> Result<Self>
+    where
+        Self: Sized;
+}
+
+/// Helper type for reading value fields
+struct ValueOption<T> {
+    key: Key<'static>,
+    value: Option<T>,
+}
+
+impl<T> ValueOption<T> {
+    fn new<K: Into<Key<'static>>>(key: K) -> Self {
+        Self {
+            key: key.into(),
+            value: None,
+        }
+    }
+
+    fn ok(self) -> Result<T> {
+        self.value
+            .ok_or_else(|| eyre!("Missing field \"{}\"", self.key))
+    }
+
+    fn option(self) -> Option<T> {
+        self.value
+    }
+}
+
+impl<'a, T: ReadQfx<'a>> ValueOption<T> {
+    fn fill(&mut self, lexer: &'a Lexer) -> Result<()> {
+        match self.value {
+            Some(_) => Err(eyre!("Duplicate key \"{}\"", self.key)),
+            None => {
+                self.value = Some(
+                    T::read(lexer).wrap_err_with(|| eyre!("Error parsing key \"{}\"", self.key))?,
+                );
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<'a, T: ReadQfxVariable<'a>> ValueOption<T> {
+    fn fill_variable(&mut self, lexer: &'a Lexer) -> Result<()> {
+        match self.value {
+            Some(_) => Err(eyre!("Duplicate key \"{}\"", self.key)),
+            None => {
+                self.value = Some(
+                    T::read(lexer, self.key)
+                        .wrap_err_with(|| eyre!("Error parsing key \"{}\"", self.key))?,
+                );
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<'a> ReadQfx<'a> for Value<'a> {
+    fn read(lexer: &'a Lexer) -> Result<Self> {
+        lexer.expect_value()
+    }
+}
+
+impl ReadQfx<'_> for u32 {
+    fn read(lexer: &Lexer) -> Result<Self> {
+        lexer
+            .expect_value()?
+            .parse()
+            .wrap_err("Failed to parse u32 value")
+    }
+}
+
+#[derive(Debug)]
+pub enum Severity {
+    Info,
+}
+
+impl ReadQfx<'_> for Severity {
+    fn read(lexer: &Lexer) -> Result<Self> {
+        match lexer.expect_value()?.as_ref() {
+            "INFO" => Ok(Self::Info),
+            v => Err(eyre!("Unknown severity: {v}")),
+        }
+    }
+}
+
+struct Status<'a> {
+    code: u32,
+    severity: Severity,
+    message: Option<Value<'a>>,
+}
+
+impl<'a> ReadQfx<'a> for Status<'a> {
+    /// Read the tokens
+    fn read(lexer: &'a Lexer) -> Result<Self> {
+        let mut code = ValueOption::new(b"CODE");
+        let mut severity = ValueOption::new(b"SEVERITY");
+        let mut message = ValueOption::new(b"MESSAGE");
+        loop {
+            match lexer.expect_field(b"STATUS")? {
+                Some(Key(b"CODE")) => code.fill(lexer)?,
+                Some(Key(b"SEVERITY")) => severity.fill(lexer)?,
+                Some(Key(b"MESSAGE")) => message.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
+            }
+        }
+
+        Ok(Self {
+            code: code.ok()?,
+            severity: severity.ok()?,
+            message: message.option(),
+        })
+    }
+}
+
 trait PutLocalOrElse<T> {
     fn put_or_else(&self, name: &str, value: Result<T>) -> Result<()>;
 }
@@ -210,11 +343,6 @@ impl TrackField for Cell<bool> {
 
         Ok(())
     }
-}
-
-#[derive(Debug)]
-pub enum Severity {
-    Info,
 }
 
 #[derive(Debug)]
@@ -338,7 +466,7 @@ impl<'a> DocumentParser {
                     }
                     Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state.get()),
                     None => {
-                        self.expect_done()?;
+                        self.tokens.expect_none()?;
                         self.state.set(ParserState::ReadClose);
                     },
                 },
@@ -369,7 +497,7 @@ impl<'a> DocumentParser {
                         self
                         .read_transaction_id
                         .set_with_value("TRNUID", self.get_u32())?},
-                    Some(b"STATUS") => {self.read_status.set_with("STATUS", self.check_status())?},
+                    Some(b"STATUS") => {self.read_status.set_with("STATUS", Status::read(&self.tokens).map(|_| ()))?},
                     Some(b"STMTRS") => {
                         self.statement_response_name
                             .put_or_else("STMTRS", Ok(b"STMTRS"))?;
@@ -473,7 +601,9 @@ impl<'a> DocumentParser {
         let mut bank_id = false;
         loop {
             match self.get_field(b"SONRS")? {
-                Some(b"STATUS") => status.set_with("STATUS", self.check_status())?,
+                Some(b"STATUS") => {
+                    status.set_with("STATUS", Status::read(&self.tokens).map(|_| ()))?
+                }
                 Some(b"DTSERVER") => {
                     server_date.set_with_value("DTSERVER", self.get_timestamp())?
                 }
@@ -496,27 +626,6 @@ impl<'a> DocumentParser {
         // last_profile_update is optional
         financial_institution.ensure_field("FI")?;
         bank_id.ensure_field("INTU.BID")?;
-        Ok(())
-    }
-
-    fn check_status(&self) -> Result<()> {
-        let mut code = false;
-        let mut severity = false;
-        let mut message = false;
-        loop {
-            match self.get_field(b"STATUS")? {
-                Some(b"CODE") => code.set_with_value("CODE", self.get_u32())?,
-                Some(b"SEVERITY") => severity.set_with_value("SEVERITY", self.get_severity())?,
-                Some(b"MESSAGE") => message.set_with_value("MESSAGE", self.get_value())?,
-                Some(key) => bail!("Unexpected key '{:?}'", key),
-                None => break,
-            }
-        }
-
-        code.ensure_field("CODE")?;
-        severity.ensure_field("SEVERITY")?;
-        // message is optional
-
         Ok(())
     }
 
@@ -590,29 +699,20 @@ impl<'a> DocumentParser {
     }
 
     fn get_key(&'a self) -> Result<&'a [u8]> {
-        match self.get_token()? {
-            QfxToken::OpenKey(key) => Ok(key),
+        match self.tokens.next()? {
+            QfxToken::OpenKey(key) => Ok(key.0),
             t => Err(eyre!("Expected key, got: {:?}", t)),
         }
     }
 
     fn get_field(&'a self, struct_name: &[u8]) -> Result<Option<&'a [u8]>> {
-        match self.get_token()? {
-            QfxToken::OpenKey(key) => Ok(Some(key)),
-            QfxToken::CloseKey(k) if k == struct_name => Ok(None),
-            t => Err(eyre!("Expected key, got: {:?}", t)),
-        }
+        self.tokens
+            .expect_field(struct_name)
+            .map(|v| v.map(|Key(k)| k))
     }
 
-    fn get_value(&'a self) -> Result<Cow<'a, str>> {
-        match self.get_token()? {
-            QfxToken::Value(value) => Ok(value),
-            t => Err(eyre!("Expected value, got: {:?}", t)),
-        }
-    }
-
-    fn get_token(&'a self) -> Result<QfxToken<'a>> {
-        self.tokens.next()?.ok_or_eyre("Unexpected end of file")
+    fn get_value(&'a self) -> Result<Value<'a>> {
+        self.tokens.expect_value()
     }
 
     fn get_u32(&self) -> Result<u32> {
@@ -673,14 +773,6 @@ impl<'a> DocumentParser {
             .wrap_err("Failed to parse naive date value")
     }
 
-    fn get_severity(&self) -> Result<Severity> {
-        let value = self.get_value()?;
-        match value.as_ref() {
-            "INFO" => Ok(Severity::Info),
-            v => Err(eyre!("Unexpected severity: '{}'", v)),
-        }
-    }
-
     fn check_currency(&self) -> Result<()> {
         let value = self.get_value()?;
         match value.as_ref() {
@@ -708,13 +800,6 @@ impl<'a> DocumentParser {
             "OTHER" => Ok(QfxTransactionType::Other),
             v => Err(eyre!("Unexpected transaction type: '{}'", v)),
         }
-    }
-
-    fn expect_done(&self) -> Result<()> {
-        if let Some(v) = self.tokens.next()? {
-            bail!("Unexpected token at end of file: {:?}", v);
-        }
-        Ok(())
     }
 
     fn get_local_time(&self) -> FixedOffset {
