@@ -4,7 +4,7 @@ mod header;
 mod lexer;
 
 use std::borrow::Cow;
-use std::cell::{Cell, OnceCell};
+use std::cell::{Cell, LazyCell, OnceCell};
 use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
@@ -18,6 +18,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use crate::importer::qfx_file::header::StringEncoding;
 use crate::importer::qfx_file::lexer::{Key, Lexer, QfxToken, Value};
 use crate::importer::{Transaction, TransactionImporter, TransactionReader, TransactionType};
+
+const LOCAL_TIMEZONE: LazyCell<FixedOffset> = LazyCell::new(|| *Local::now().offset());
 
 pub struct QfxReader {
     contents: Vec<u8>,
@@ -135,22 +137,6 @@ impl TransactionReader for QfxReader {
     }
 }
 
-trait PutOrElse<T> {
-    fn put_or_else(&mut self, name: &str, value: Result<T>) -> Result<()>;
-}
-
-impl<T> PutOrElse<T> for Option<T> {
-    fn put_or_else(&mut self, name: &str, value: Result<T>) -> Result<()> {
-        match self {
-            Some(_) => Err(eyre!("Duplicate key '{}'", name)),
-            None => {
-                *self = Some(value.wrap_err_with(|| eyre!("Error parsing key '{}'", name))?);
-                Ok(())
-            }
-        }
-    }
-}
-
 /// Read a type from a lexer
 ///
 /// This should expect it's outermost field to have been opened, and must read until it's close
@@ -199,10 +185,11 @@ impl<T> ValueOption<T> {
 impl<'a, T: ReadQfx<'a>> ValueOption<T> {
     fn fill(&mut self, lexer: &'a Lexer) -> Result<()> {
         match self.value {
-            Some(_) => Err(eyre!("Duplicate key \"{}\"", self.key)),
+            Some(_) => Err(eyre!("Duplicate field \"{}\"", self.key)),
             None => {
                 self.value = Some(
-                    T::read(lexer).wrap_err_with(|| eyre!("Error parsing key \"{}\"", self.key))?,
+                    T::read(lexer)
+                        .wrap_err_with(|| eyre!("Error parsing field \"{}\"", self.key))?,
                 );
                 Ok(())
             }
@@ -210,18 +197,58 @@ impl<'a, T: ReadQfx<'a>> ValueOption<T> {
     }
 }
 
-impl<'a, T: ReadQfxVariable<'a>> ValueOption<T> {
-    fn fill_variable(&mut self, lexer: &'a Lexer) -> Result<()> {
-        match self.value {
-            Some(_) => Err(eyre!("Duplicate key \"{}\"", self.key)),
-            None => {
-                self.value = Some(
-                    T::read(lexer, self.key)
-                        .wrap_err_with(|| eyre!("Error parsing key \"{}\"", self.key))?,
-                );
-                Ok(())
-            }
+/// Helper type for reading ignore fields
+struct FieldFlag {
+    key: OnceCell<Key<'static>>,
+    value: Cell<bool>,
+}
+
+impl FieldFlag {
+    fn new<K: Into<Key<'static>>>(key: K) -> Self {
+        Self {
+            key: OnceCell::from(key.into()),
+            value: Cell::new(false),
         }
+    }
+
+    fn unnamed() -> Self {
+        Self {
+            key: OnceCell::new(),
+            value: Cell::new(false),
+        }
+    }
+
+    fn check<'a, T: ReadQfx<'a>>(&self, lexer: &'a Lexer) -> Result<()> {
+        let key_name = self.key.get().ok_or_eyre("Field flag missing name")?;
+
+        if self.value.get() {
+            bail!("Duplicate field \"{}\"", key_name);
+        }
+
+        let _ = T::read(lexer).wrap_err_with(|| eyre!("Error parsing field \"{}\"", key_name))?;
+        self.value.set(true);
+        Ok(())
+    }
+
+    fn check_var<'a, K: Into<Key<'static>>, T: ReadQfxVariable<'a>>(
+        &self,
+        key: K,
+        lexer: &'a Lexer,
+    ) -> Result<()> {
+        let key = key.into();
+        match self.key.get() {
+            Some(k) if *k == key => {}
+            Some(k) => bail!("Attempt to set second key for field flag \"{}\"", k),
+            None => self.key.set(key).unwrap(),
+        }
+
+        if self.value.get() {
+            bail!("Duplicate field \"{}\"", key);
+        }
+
+        let _ = T::read(lexer, key).wrap_err_with(|| eyre!("Error parsing field \"{}\"", key))?;
+        self.value.set(true);
+        Ok(())
     }
 }
 
@@ -240,8 +267,66 @@ impl ReadQfx<'_> for u32 {
     }
 }
 
+impl ReadQfx<'_> for Decimal {
+    fn read(lexer: &Lexer) -> Result<Self> {
+        lexer
+            .expect_value()?
+            .parse()
+            .wrap_err("Failed to parse decimal value")
+    }
+}
+
+impl ReadQfx<'_> for DateTime<FixedOffset> {
+    fn read(lexer: &'_ Lexer) -> Result<Self> {
+        let value = lexer.expect_value()?;
+
+        let (timestamp, offset) = if value.ends_with(']') {
+            let mut datetime_parts = value.split('[');
+            let datetime_str = datetime_parts
+                .next()
+                .ok_or_eyre("Timestamp missing start of timezone block")?;
+
+            let datetime = NaiveDateTime::parse_from_str(datetime_str, "%Y%m%d%H%M%S%.f")
+                .wrap_err("Failed to parse timestamp")?;
+
+            let mut timezone_parts = datetime_parts
+                .next()
+                .ok_or_eyre("Timestamp missing timezone block")?
+                .split(':');
+            let offset_hours = timezone_parts
+                .next()
+                .ok_or_eyre("Timestamp missing timezone offset")?
+                .parse::<i8>()
+                .wrap_err("Invalid timezone offset")?;
+
+            let offset = FixedOffset::east_opt(offset_hours as i32 * 60 * 60)
+                .ok_or_eyre("Out of bounds timezone offset")?;
+
+            (datetime, offset)
+        } else {
+            // Fallback to assuming this is local time. This will have annoying daylight savings time implications
+            let datetime = NaiveDateTime::parse_from_str(&value, "%Y%m%d%H%M%S%.f")
+                .wrap_err("Failed to parse naive date value")?;
+
+            (datetime, *LOCAL_TIMEZONE)
+        };
+
+        offset
+            .from_local_datetime(&timestamp)
+            .single()
+            .ok_or_eyre("Ambiguous date conversion")
+    }
+}
+
+impl ReadQfx<'_> for NaiveDateTime {
+    fn read(lexer: &'_ Lexer) -> Result<Self> {
+        let value = lexer.expect_value()?;
+        Self::parse_from_str(&value, "%Y%m%d%H%M%S%.f").wrap_err("Failed to parse naive date value")
+    }
+}
+
 #[derive(Debug)]
-pub enum Severity {
+enum Severity {
     Info,
 }
 
@@ -249,11 +334,78 @@ impl ReadQfx<'_> for Severity {
     fn read(lexer: &Lexer) -> Result<Self> {
         match lexer.expect_value()?.as_ref() {
             "INFO" => Ok(Self::Info),
-            v => Err(eyre!("Unknown severity: {v}")),
+            v => Err(eyre!("Unknown severity: \"{v}\"")),
         }
     }
 }
 
+#[derive(Debug)]
+enum Language {
+    English,
+}
+
+impl ReadQfx<'_> for Language {
+    fn read(lexer: &Lexer) -> Result<Self> {
+        match lexer.expect_value()?.as_ref() {
+            "ENG" => Ok(Self::English),
+            v => Err(eyre!("Unknown language: \"{v}\"")),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Currency {
+    CanadianDollar,
+}
+
+impl<'a> ReadQfx<'a> for Currency {
+    fn read(lexer: &'a Lexer) -> Result<Self> {
+        match lexer.expect_value()?.as_ref() {
+            "CAD" => Ok(Self::CanadianDollar),
+            v => Err(eyre!("Unknown currency: \"{v}\"")),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum AccountType {
+    Savings,
+}
+
+impl ReadQfx<'_> for AccountType {
+    fn read(lexer: &Lexer) -> Result<Self> {
+        match lexer.expect_value()?.as_ref() {
+            "SAVINGS" => Ok(Self::Savings),
+            v => Err(eyre!("Unknown account type: \"{v}\"")),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum QfxTransactionType {
+    Debit,
+    Credit,
+    Pos,
+    Atm,
+    Fee,
+    Other,
+}
+
+impl ReadQfx<'_> for QfxTransactionType {
+    fn read(lexer: &Lexer) -> Result<Self> {
+        match lexer.expect_value()?.as_ref() {
+            "DEBIT" => Ok(Self::Debit),
+            "CREDIT" => Ok(Self::Credit),
+            "POS" => Ok(Self::Pos),
+            "ATM" => Ok(Self::Atm),
+            "FEE" => Ok(Self::Fee),
+            "OTHER" => Ok(Self::Other),
+            v => Err(eyre!("Unknown transaction type: \"{v}\"")),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Status<'a> {
     code: u32,
     severity: Severity,
@@ -284,64 +436,171 @@ impl<'a> ReadQfx<'a> for Status<'a> {
     }
 }
 
-trait PutLocalOrElse<T> {
-    fn put_or_else(&self, name: &str, value: Result<T>) -> Result<()>;
+#[derive(Debug)]
+struct FinancialInstitution<'a> {
+    organization: Value<'a>,
+    institution_id: u32,
 }
 
-impl<T> PutLocalOrElse<T> for OnceCell<T> {
-    fn put_or_else(&self, name: &str, value: Result<T>) -> Result<()> {
-        let val = value.wrap_err_with(|| eyre!("Error parsing key '{}'", name))?;
-        self.set(val).map_err(|_| eyre!("Duplicate key '{}'", name))
-    }
-}
-
-trait TrackLocalField {
-    fn set_with(&mut self, struct_name: &str, check: Result<()>) -> Result<()>;
-    fn set_with_value<T>(&mut self, struct_name: &str, check: Result<T>) -> Result<()> {
-        self.set_with(struct_name, check.map(|_| ()))
-    }
-
-    fn ensure_field(&self, field_name: &str) -> Result<()>;
-}
-
-impl TrackLocalField for bool {
-    fn set_with(&mut self, struct_name: &str, check: Result<()>) -> Result<()> {
-        match (check, *self) {
-            (Ok(()), false) => {
-                *self = true;
-                Ok(())
+impl<'a> ReadQfx<'a> for FinancialInstitution<'a> {
+    fn read(lexer: &'a Lexer) -> Result<Self> {
+        let mut organization = ValueOption::new(b"ORG");
+        let mut institution_id = ValueOption::new(b"FID");
+        loop {
+            match lexer.expect_field(b"FI")? {
+                Some(Key(b"ORG")) => organization.fill(lexer)?,
+                Some(Key(b"FID")) => institution_id.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
             }
-            (Ok(()), true) => Err(eyre!("Duplicate struct '{}'", struct_name)),
-            (Err(e), false) => {
-                Err(e).wrap_err_with(|| format!("Failed to parse struct '{}'", struct_name))
+        }
+
+        Ok(Self {
+            organization: organization.ok()?,
+            institution_id: institution_id.ok()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct SignOnResponse<'a> {
+    status: Status<'a>,
+    server_date: DateTime<FixedOffset>,
+    language: Language,
+    last_profile_update: Option<DateTime<FixedOffset>>,
+    financial_institution: FinancialInstitution<'a>,
+    bank_id: u32,
+}
+
+impl<'a> ReadQfx<'a> for SignOnResponse<'a> {
+    fn read(lexer: &'a Lexer) -> Result<Self> {
+        let mut status = ValueOption::new(b"STATUS");
+        let mut server_date = ValueOption::new(b"DTSERVER");
+        let mut language = ValueOption::new(b"LANGUAGE");
+        let mut last_profile_update = ValueOption::new(b"DTPROFUP");
+        let mut financial_institution = ValueOption::new(b"FI");
+        let mut bank_id = ValueOption::new(b"INTU.BID");
+        loop {
+            match lexer.expect_field(b"SONRS")? {
+                Some(Key(b"STATUS")) => status.fill(lexer)?,
+                Some(Key(b"DTSERVER")) => server_date.fill(lexer)?,
+                Some(Key(b"LANGUAGE")) => language.fill(lexer)?,
+                Some(Key(b"DTPROFUP")) => last_profile_update.fill(lexer)?,
+                Some(Key(b"FI")) => financial_institution.fill(lexer)?,
+                Some(Key(b"INTU.BID")) => bank_id.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
             }
-            (Err(e), true) => Err(e)
-                .wrap_err_with(|| format!("Failed to parse duplicate struct '{}'", struct_name)),
         }
-    }
 
-    fn ensure_field(&self, field_name: &str) -> Result<()> {
-        match *self {
-            true => Ok(()),
-            false => Err(eyre!("Missing field '{}'", field_name)),
-        }
+        Ok(Self {
+            status: status.ok()?,
+            server_date: server_date.ok()?,
+            language: language.ok()?,
+            last_profile_update: last_profile_update.option(),
+            financial_institution: financial_institution.ok()?,
+            bank_id: bank_id.ok()?,
+        })
     }
 }
 
-trait TrackField {
-    fn set_with(&self, struct_name: &str, check: Result<()>) -> Result<()>;
-    fn set_with_value<T>(&self, struct_name: &str, check: Result<T>) -> Result<()> {
-        self.set_with(struct_name, check.map(|_| ()))
+#[derive(Debug)]
+struct SignOnMessageResponseV1<'a> {
+    response: SignOnResponse<'a>,
+}
+
+impl<'a> ReadQfx<'a> for SignOnMessageResponseV1<'a> {
+    fn read(lexer: &'a Lexer) -> Result<Self> {
+        let mut response = ValueOption::new(b"SONRS");
+        loop {
+            match lexer.expect_field(b"SIGNONMSGSRSV1")? {
+                Some(Key(b"SONRS")) => response.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
+            }
+        }
+
+        Ok(Self {
+            response: response.ok()?,
+        })
     }
 }
 
-impl TrackField for Cell<bool> {
-    fn set_with(&self, struct_name: &str, check: Result<()>) -> Result<()> {
-        let mut val = self.get();
-        val.set_with(struct_name, check)?;
-        self.set(val);
+#[derive(Debug)]
+struct AccountFrom {
+    account_id: u32,
+    bank_id: Option<u32>,
+    account_type: Option<AccountType>,
+}
 
-        Ok(())
+impl ReadQfxVariable<'_> for AccountFrom {
+    fn read<'k>(lexer: &Lexer, key: Key<'k>) -> Result<Self> {
+        let mut bank_id = ValueOption::new(b"BANKID");
+        let mut account_id = ValueOption::new(b"ACCTID");
+        let mut account_type = ValueOption::new(b"ACCTTYPE");
+        loop {
+            match lexer.expect_field(key)? {
+                Some(Key(b"BANKID")) => bank_id.fill(lexer)?,
+                Some(Key(b"ACCTID")) => account_id.fill(lexer)?,
+                Some(Key(b"ACCTTYPE")) => account_type.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
+            }
+        }
+
+        Ok(Self {
+            account_id: account_id.ok()?,
+            bank_id: bank_id.option(),
+            account_type: account_type.option(),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct Balance {
+    amount: Decimal,
+    timestamp: DateTime<FixedOffset>,
+}
+
+impl ReadQfxVariable<'_> for Balance {
+    fn read<'k>(lexer: &'_ Lexer, key: Key<'k>) -> Result<Self> {
+        let mut amount = ValueOption::new(b"BALAMT");
+        let mut timestamp = ValueOption::new(b"DTASOF");
+        loop {
+            match lexer.expect_field(key)? {
+                Some(Key(b"BALAMT")) => amount.fill(lexer)?,
+                Some(Key(b"DTASOF")) => timestamp.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
+            }
+        }
+
+        Ok(Self {
+            amount: amount.ok()?,
+            timestamp: timestamp.ok()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct AccountTo {
+    account_id: u32,
+}
+
+impl ReadQfx<'_> for AccountTo {
+    fn read(lexer: &'_ Lexer) -> Result<Self> {
+        let mut account_id = ValueOption::new(b"ACCTID");
+        loop {
+            match lexer.expect_field(b"CCACCTTO")? {
+                Some(Key(b"ACCTID")) => account_id.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
+            }
+        }
+
+        Ok(Self {
+            account_id: account_id.ok()?,
+        })
     }
 }
 
@@ -357,458 +616,203 @@ pub struct StatementTransaction<'a> {
     memo: Option<Cow<'a, str>>,
 }
 
-#[derive(Debug)]
-pub struct AccountTo {
-    // account_id: u32,
-}
+impl<'a> ReadQfx<'a> for StatementTransaction<'a> {
+    fn read(lexer: &'a Lexer) -> Result<Self> {
+        let mut transaction_type = ValueOption::new(b"TRNTYPE");
+        let mut date_posted = ValueOption::new(b"DTPOSTED");
+        let mut user_date: ValueOption<NaiveDateTime> = ValueOption::new(b"DTUSER");
+        let mut amount = ValueOption::new(b"TRNAMT");
+        let mut transaction_id = ValueOption::new(b"FITID");
+        let mut name = ValueOption::new(b"NAME");
+        let mut account_to: ValueOption<AccountTo> = ValueOption::new(b"CCACCTTO");
+        let mut memo = ValueOption::new(b"MEMO");
 
-#[derive(Debug)]
-pub enum QfxTransactionType {
-    Debit,
-    Credit,
-    Pos,
-    Atm,
-    Fee,
-    Other,
-}
+        loop {
+            match lexer.expect_field(b"STMTTRN")? {
+                Some(Key(b"TRNTYPE")) => transaction_type.fill(lexer)?,
+                Some(Key(b"DTPOSTED")) => date_posted.fill(lexer)?,
+                Some(Key(b"DTUSER")) => user_date.fill(lexer)?,
+                Some(Key(b"TRNAMT")) => amount.fill(lexer)?,
+                Some(Key(b"FITID")) => transaction_id.fill(lexer)?,
+                Some(Key(b"NAME")) => name.fill(lexer)?,
+                Some(Key(b"CCACCTTO")) => account_to.fill(lexer)?,
+                Some(Key(b"MEMO")) => memo.fill(lexer)?,
+                Some(key) => bail!("Unexpected key \"{}\"", key),
+                None => break,
+            }
+        }
 
-#[derive(Debug)]
-pub enum AccountType {
-    Savings,
+        let _ = user_date.ok()?;
+        let _ = account_to.ok()?;
+
+        Ok(Self {
+            transaction_type: transaction_type.ok()?,
+            date_posted: date_posted.ok()?,
+            amount: amount.ok()?,
+            transaction_id: transaction_id.ok()?,
+            name: name.ok()?,
+            memo: memo.option(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 enum ParserState {
     NotStarted,
-    ReadOpen,
-    ReadClose,
-    ReadInstitutionMessage,
-    ReadStatementTransactionResponse,
-    ReadStatementResponse,
-    ReadTransactionList,
-    ReadTransaction,
+    InOfx,
+    InInstitutionMessage(Key<'static>),
+    InStatementTransactionResponse(Key<'static>, Key<'static>),
+    InStatementResponse(Key<'static>, Key<'static>, Key<'static>),
+    ReadTransactionList(Key<'static>, Key<'static>, Key<'static>),
+    Done,
 }
 
 pub struct DocumentParser {
     tokens: Lexer,
-    local_timezone: Cell<Option<FixedOffset>>,
-    // State tracking
-    institution_message_response_name: OnceCell<&'static [u8]>,
-    statement_transaction_response_name: OnceCell<&'static [u8]>,
-    statement_response_name: OnceCell<&'static [u8]>,
     state: Cell<ParserState>,
-    read_sign_on_message_response: Cell<bool>,
-    read_transaction_id: Cell<bool>,
-    read_status: Cell<bool>,
-    read_currency: Cell<bool>,
-    read_account_from: Cell<bool>,
-    read_start_date: Cell<bool>,
-    read_end_date: Cell<bool>,
-    read_ledger_balance: Cell<bool>,
-    read_available_balance: Cell<bool>,
+    sign_on_message_response_seen: FieldFlag,
+    transaction_id_seen: FieldFlag,
+    status_seen: FieldFlag,
+    currency_seen: FieldFlag,
+    account_from_seen: FieldFlag,
+    ledger_balance_seen: FieldFlag,
+    available_balance_seen: FieldFlag,
+    start_date_seen: FieldFlag,
+    end_date_seen: FieldFlag,
 }
 
 impl<'a> DocumentParser {
     fn new(lexer: Lexer) -> Self {
         Self {
             tokens: lexer,
-            local_timezone: Cell::new(None),
-            institution_message_response_name: OnceCell::new(),
-            statement_transaction_response_name: OnceCell::new(),
-            statement_response_name: OnceCell::new(),
             state: Cell::new(ParserState::NotStarted),
-            read_sign_on_message_response: Cell::new(false),
-            read_transaction_id: Cell::new(false),
-            read_status: Cell::new(false),
-            read_currency: Cell::new(false),
-            read_account_from: Cell::new(false),
-            read_start_date: Cell::new(false),
-            read_end_date: Cell::new(false),
-            read_ledger_balance: Cell::new(false),
-            read_available_balance: Cell::new(false),
+            sign_on_message_response_seen: FieldFlag::new(b"SIGNONMSGSRSV1"),
+            transaction_id_seen: FieldFlag::new(b"TRNUID"),
+            status_seen: FieldFlag::new(b"STATUS"),
+            currency_seen: FieldFlag::new(b"CURDEF"),
+            account_from_seen: FieldFlag::unnamed(),
+            ledger_balance_seen: FieldFlag::new(b"LEDGERBAL"),
+            available_balance_seen: FieldFlag::new(b"AVAILBAL"),
+            start_date_seen: FieldFlag::new(b"DTSTART"),
+            end_date_seen: FieldFlag::new(b"DTEND"),
         }
     }
 
     fn next_statement_transaction(&'a self) -> Result<Option<StatementTransaction<'a>>> {
-        // Transaction
-        let mut transaction_type = None;
-        let mut date_posted = None;
-        let mut user_date = None;
-        let mut amount = None;
-        let mut transaction_id = None;
-        let mut name = None;
-        let mut account_to = None;
-        let mut memo = None;
-
         loop {
             match self.state.get() {
-                ParserState::NotStarted => {
-                    let first_key = self.get_key()?;
-                    if first_key != b"OFX" {
-                        bail!("Unexpected key '{:?}' for state {:?}", first_key, self.state.get());
+                ParserState::NotStarted => match self.tokens.next()? {
+                    QfxToken::OpenKey(Key(b"QFX")) => self.state.set(ParserState::InOfx),
+                    t => bail!(
+                        "Expected {:?}, got: {:?}",
+                        QfxToken::OpenKey(Key(b"QFX")),
+                        t
+                    ),
+                },
+                ParserState::InOfx => match self.tokens.expect_field(b"OFX")? {
+                    Some(Key(b"SIGNONMSGSRSV1")) => {
+                        self.sign_on_message_response_seen
+                            .check::<SignOnMessageResponseV1>(&self.tokens)?
                     }
-                    self.state.set(ParserState::ReadOpen);
-                }
-                ParserState::ReadOpen => match self.get_field(b"OFX")? {
-                    Some(b"SIGNONMSGSRSV1") => {
-                        self.read_sign_on_message_response
-                            .set_with("SIGNONMSGSRSV1", self.check_sign_on_message_response_v1())?;
-                    }
-                    Some(b"BANKMSGSRSV1") => {
-                        self.institution_message_response_name
-                            .put_or_else("BANKMSGSRSV1", Ok(b"BANKMSGSRSV1"))?;
-                        self.state.set(ParserState::ReadInstitutionMessage);
-                    }
-                    Some(b"CREDITCARDMSGSRSV1") => {
-                        self.institution_message_response_name
-                            .put_or_else("CREDITCARDMSGSRSV1", Ok(b"CREDITCARDMSGSRSV1"))?;
-                        self.state.set(ParserState::ReadInstitutionMessage);
-                    }
-                    Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state.get()),
+                    Some(Key(b"BANKMSGSRSV1")) => self
+                        .state
+                        .set(ParserState::InInstitutionMessage(Key(b"BANKMSGSRSV1"))),
+                    Some(Key(b"CREDITCARDMSGSRSV1")) => self.state.set(
+                        ParserState::InInstitutionMessage(Key(b"CREDITCARDMSGSRSV1")),
+                    ),
+                    Some(key) => bail!(
+                        "Unexpected key \"{}\" for state {:?}",
+                        key,
+                        self.state.get()
+                    ),
                     None => {
                         self.tokens.expect_none()?;
-                        self.state.set(ParserState::ReadClose);
-                    },
+                        self.state.set(ParserState::Done);
+                    }
                 },
-                ParserState::ReadInstitutionMessage => {
-                    match self.get_field(self.institution_message_response_name.get().ok_or_eyre(
-                        "Missing institution response in ReadInstitutionMessage state",
-                    )?)? {
-                        Some(b"STMTTRNRS") => {
-                            self.statement_transaction_response_name
-                                .put_or_else("STMTTRNRS",  Ok(b"STMTTRNRS"))?;
-                            self.state.set(ParserState::ReadStatementTransactionResponse);
+                ParserState::InInstitutionMessage(k) => match self.tokens.expect_field(k)? {
+                    Some(Key(b"STMTTRNRS")) => self.state.set(
+                        ParserState::InStatementTransactionResponse(k, Key(b"STMTTRNRS")),
+                    ),
+                    Some(Key(b"CCSTMTTRNRS")) => self.state.set(
+                        ParserState::InStatementTransactionResponse(k, Key(b"CCSTMTTRNRS")),
+                    ),
+                    Some(key) => bail!(
+                        "Unexpected key \"{}\" for state {:?}",
+                        key,
+                        self.state.get()
+                    ),
+                    None => self.state.set(ParserState::InOfx),
+                },
+                ParserState::InStatementTransactionResponse(k1, k2) => {
+                    match self.tokens.expect_field(k2)? {
+                        Some(Key(b"TRNUID")) => {
+                            self.transaction_id_seen.check::<u32>(&self.tokens)?
                         }
-                        Some(b"CCSTMTTRNRS") => {
-                            self.statement_transaction_response_name
-                                .put_or_else("CCSTMTTRNRS", Ok(b"CCSTMTTRNRS"))?;
-                            self.state.set(ParserState::ReadStatementTransactionResponse);
+                        Some(Key(b"STATUS")) => self.status_seen.check::<Status>(&self.tokens)?,
+                        Some(Key(b"STMTRS")) => {
+                            self.state
+                                .set(ParserState::InStatementResponse(k1, k2, Key(b"STMTRS")))
                         }
-                        Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state.get()),
-                        None => self.state.set(ParserState::ReadOpen),
+                        Some(Key(b"CCSTMTRS")) => self.state.set(ParserState::InStatementResponse(
+                            k1,
+                            k2,
+                            Key(b"CCSTMTRS"),
+                        )),
+                        Some(key) => bail!(
+                            "Unexpected key \"{}\" for state {:?}",
+                            key,
+                            self.state.get()
+                        ),
+                        None => self.state.set(ParserState::InInstitutionMessage(k1)),
                     }
                 }
-                ParserState::ReadStatementTransactionResponse => match self.get_field(
-                    self.statement_transaction_response_name.get().ok_or_eyre(
-                        "Missing statement transaction response in ReadStatementTransactionRecord state",
-                    )?,
-                )? {
-                    Some(b"TRNUID") => {
-                        self
-                        .read_transaction_id
-                        .set_with_value("TRNUID", self.get_u32())?},
-                    Some(b"STATUS") => {self.read_status.set_with("STATUS", Status::read(&self.tokens).map(|_| ()))?},
-                    Some(b"STMTRS") => {
-                        self.statement_response_name
-                            .put_or_else("STMTRS", Ok(b"STMTRS"))?;
-                        self.state.set(ParserState::ReadStatementResponse);
+                ParserState::InStatementResponse(k1, k2, k3) => {
+                    match self.tokens.expect_field(k3)? {
+                        Some(Key(b"CURDEF")) => {
+                            self.currency_seen.check::<Currency>(&self.tokens)?
+                        }
+                        Some(Key(b"BANKACCTFROM")) => self
+                            .account_from_seen
+                            .check_var::<_, AccountFrom>(b"BANKACCTFROM", &self.tokens)?,
+                        Some(Key(b"CCACCTFROM")) => self
+                            .account_from_seen
+                            .check_var::<_, AccountFrom>(b"CCACCTFROM", &self.tokens)?,
+                        Some(Key(b"BANKTRANLIST")) => {
+                            self.state.set(ParserState::ReadTransactionList(k1, k2, k3))
+                        }
+                        Some(Key(b"LEDGERBAL")) => self
+                            .ledger_balance_seen
+                            .check_var::<_, Balance>(b"LEDGERBAL", &self.tokens)?,
+                        Some(Key(b"AVAILBAL")) => self
+                            .available_balance_seen
+                            .check_var::<_, Balance>(b"AVAILBAL", &self.tokens)?,
+                        Some(key) => bail!(
+                            "Unexpected key \"{}\" for state {:?}",
+                            key,
+                            self.state.get()
+                        ),
+                        None => self
+                            .state
+                            .set(ParserState::InStatementTransactionResponse(k1, k2)),
                     }
-                    Some(b"CCSTMTRS") => {
-                        self.statement_response_name
-                            .put_or_else("CCSTMTRS", Ok(b"CCSTMTRS"))?;
-                        self.state.set(ParserState::ReadStatementResponse);
+                }
+                ParserState::ReadTransactionList(k1, k2, k3) => {
+                    match self.tokens.expect_field(b"BANKTRANLIST")? {
+                        Some(Key(b"DTSTART")) => self
+                            .start_date_seen
+                            .check::<DateTime<FixedOffset>>(&self.tokens)?,
+                        Some(Key(b"DTEND")) => self
+                            .end_date_seen
+                            .check::<DateTime<FixedOffset>>(&self.tokens)?,
+                        Some(Key(b"STMTTRN")) => {
+                            return StatementTransaction::read(&self.tokens).map(Some);
+                        }
+                        Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state),
+                        None => self.state.set(ParserState::InStatementResponse(k1, k2, k3)),
                     }
-                    Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state.get()),
-                    None => self.state.set(ParserState::ReadInstitutionMessage),
-                },
-                ParserState::ReadStatementResponse => match self.get_field(self.statement_response_name.get().ok_or_eyre(
-                        "Missing statement response in ReadStatementResponse state",
-                    )?,)? {
-                    Some(b"CURDEF") => {
-                        self
-                        .read_currency
-                        .set_with("CURDEF", self.check_currency())?},
-                    Some(b"BANKACCTFROM") => {
-                        self
-                        .read_account_from
-                        .set_with("BANKACCTFROM",  self.check_account_from(b"BANKACCTFROM"))?},
-                    Some(b"CCACCTFROM") => {
-                        self
-                        .read_account_from
-                        .set_with("CCACCTFROM",  self.check_account_from(b"CCACCTFROM"))?},
-                    Some(b"BANKTRANLIST") => self.state.set(ParserState::ReadTransactionList),
-                    Some(b"LEDGERBAL") => {
-                        self.read_ledger_balance.set_with("LEDGERBAL", self.check_balance(b"LEDGERBAL"))?;
-                    }
-                    Some(b"AVAILBAL") => {
-                        self.read_available_balance.set_with("AVAILBAL", self.check_balance(b"AVAILBAL"))?;
-                    }
-                    Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state.get()),
-                    None => self.state.set(ParserState::ReadStatementTransactionResponse),
-                },
-                ParserState::ReadTransactionList => match self.get_field(b"BANKTRANLIST")? {
-                    Some(b"DTSTART") => {let check = self.get_timestamp();self.read_start_date.set_with_value("DTSTART",  check)?},
-                    Some(b"DTEND") => {let check = self.get_timestamp();self.read_end_date.set_with_value("DTEND",  check)?},
-                    Some(b"STMTTRN") => self.state.set(ParserState::ReadTransaction),
-                    Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state),
-                    None => self.state.set(ParserState::ReadStatementResponse),
-                },
-                ParserState::ReadTransaction => match self.get_field(b"STMTTRN")? {
-                    Some(b"TRNTYPE") => {transaction_type.put_or_else("TRNTYPE",  self.get_transaction_type())?},
-                    Some(b"DTPOSTED") => {date_posted.put_or_else("DTPOSTED",  self.get_timestamp())?},
-                    Some(b"DTUSER") => {user_date.put_or_else("DTUSER",  self.get_timestamp_naive())?},
-                    Some(b"TRNAMT") => {amount.put_or_else("TRNAMT",  self.get_decimal())?},
-                    Some(b"FITID") => {transaction_id.put_or_else("FITID",  self.get_value())?},
-                    Some(b"NAME") => {name.put_or_else("NAME",   self.get_value())?},
-                    Some(b"CCACCTTO") => { account_to.put_or_else("CCACCTTO",  self.get_account_to())?},
-                    Some(b"MEMO") => {memo.put_or_else("MEMO", self.get_value())?},
-                    Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state),
-                    None => {
-                        let _ = user_date.take();
-                        let _ = account_to.take();
-                        let transaction = StatementTransaction {
-                            transaction_type: transaction_type.take().ok_or_eyre("Missing key 'TRNTYPE'")?,
-                            date_posted: date_posted.take().ok_or_eyre("Missing key 'DTPOSTED'")?,
-                            // user_date: user_date.take(),
-                            amount: amount.take().ok_or_eyre("Missing key 'TRNAMT'")?,
-                            transaction_id: transaction_id.take().ok_or_eyre("Missing key 'FITID'")?,
-                            name: name.take().ok_or_eyre("Missing key 'NAME'")?,
-                            // account_to: account_to.take(),
-                            memo: memo.take(),
-                        };
-
-                        self.state.set(ParserState::ReadTransactionList);
-                        return Ok(Some(transaction));
-                    },
                 }
-                ParserState::ReadClose => return Ok(None),
-            }
-        }
-    }
-
-    fn check_sign_on_message_response_v1(&self) -> Result<()> {
-        let mut sign_on_response = false;
-        loop {
-            match self.get_field(b"SIGNONMSGSRSV1")? {
-                Some(b"SONRS") => {
-                    sign_on_response.set_with("SONRS", self.check_sign_on_response())?
-                }
-                Some(key) => bail!("Unexpected key '{:?}'", key),
-                None => break,
-            }
-        }
-
-        sign_on_response.ensure_field("SIGNONMSGSRSV1")?;
-        Ok(())
-    }
-
-    fn check_sign_on_response(&self) -> Result<()> {
-        let mut status = false;
-        let mut server_date = false;
-        let mut language = false;
-        let mut last_profile_update = false;
-        let mut financial_institution = false;
-        let mut bank_id = false;
-        loop {
-            match self.get_field(b"SONRS")? {
-                Some(b"STATUS") => {
-                    status.set_with("STATUS", Status::read(&self.tokens).map(|_| ()))?
-                }
-                Some(b"DTSERVER") => {
-                    server_date.set_with_value("DTSERVER", self.get_timestamp())?
-                }
-                Some(b"LANGUAGE") => language.set_with_value("LANGUAGE", self.get_value())?,
-                Some(b"DTPROFUP") => {
-                    last_profile_update.set_with_value("DTPROFUP", self.get_timestamp())?
-                }
-                Some(b"FI") => {
-                    financial_institution.set_with("FI", self.check_financial_institution())?
-                }
-                Some(b"INTU.BID") => bank_id.set_with_value("INTU.BID", self.get_u32())?,
-                Some(key) => bail!("Unexpected key '{:?}'", key),
-                None => break,
-            }
-        }
-
-        status.ensure_field("STATUS")?;
-        server_date.ensure_field("DTSERVER")?;
-        language.ensure_field("LANGUAGE")?;
-        // last_profile_update is optional
-        financial_institution.ensure_field("FI")?;
-        bank_id.ensure_field("INTU.BID")?;
-        Ok(())
-    }
-
-    fn check_financial_institution(&self) -> Result<()> {
-        let mut organization = false;
-        let mut institution_id = false;
-        loop {
-            match self.get_field(b"FI")? {
-                Some(b"ORG") => organization.set_with_value("ORG", self.get_value())?,
-                Some(b"FID") => institution_id.set_with_value("FID", self.get_u32())?,
-                Some(key) => bail!("Unexpected key '{:?}'", key),
-                None => break,
-            }
-        }
-
-        organization.ensure_field("ORG")?;
-        institution_id.ensure_field("FID")?;
-        Ok(())
-    }
-
-    fn check_account_from(&self, struct_name: &[u8]) -> Result<()> {
-        let mut bank_id = false;
-        let mut account_number = false;
-        let mut account_type = false;
-        loop {
-            match self.get_field(struct_name)? {
-                Some(b"BANKID") => bank_id.set_with_value("BANKID", self.get_u32())?,
-                Some(b"ACCTID") => account_number.set_with_value("ACCTID", self.get_u32())?,
-                Some(b"ACCTTYPE") => {
-                    account_type.set_with_value("ACCTTYPE", self.get_account_type())?
-                }
-                Some(key) => bail!("Unexpected key '{:?}'", key),
-                None => break,
-            }
-        }
-
-        account_number.ensure_field("ACCTID")?;
-        Ok(())
-    }
-
-    fn check_balance(&self, struct_name: &[u8]) -> Result<()> {
-        let mut amount = false;
-        let mut timestamp = false;
-        loop {
-            match self.get_field(struct_name)? {
-                Some(b"BALAMT") => amount.set_with_value("BALAMT", self.get_decimal())?,
-                Some(b"DTASOF") => timestamp.set_with_value("DTASOF", self.get_timestamp())?,
-                Some(key) => bail!("Unexpected key '{:?}'", key),
-                None => break,
-            }
-        }
-
-        amount.ensure_field("BALAMT")?;
-        timestamp.ensure_field("DTASOF")?;
-
-        Ok(())
-    }
-
-    fn get_account_to(&self) -> Result<AccountTo> {
-        let mut account_id = None;
-        loop {
-            match self.get_field(b"CCACCTTO")? {
-                Some(b"ACCTID") => account_id.put_or_else("ACCTID", self.get_u32())?,
-                Some(key) => bail!("Unexpected key '{:?}'", key),
-                None => break,
-            }
-        }
-
-        let _ = account_id.ok_or_eyre("Missing key 'ACCTID'")?;
-        Ok(AccountTo {})
-    }
-
-    fn get_key(&'a self) -> Result<&'a [u8]> {
-        match self.tokens.next()? {
-            QfxToken::OpenKey(key) => Ok(key.0),
-            t => Err(eyre!("Expected key, got: {:?}", t)),
-        }
-    }
-
-    fn get_field(&'a self, struct_name: &[u8]) -> Result<Option<&'a [u8]>> {
-        self.tokens
-            .expect_field(struct_name)
-            .map(|v| v.map(|Key(k)| k))
-    }
-
-    fn get_value(&'a self) -> Result<Value<'a>> {
-        self.tokens.expect_value()
-    }
-
-    fn get_u32(&self) -> Result<u32> {
-        self.get_value()?
-            .parse()
-            .wrap_err("Failed to parse u32 value")
-    }
-
-    fn get_decimal(&self) -> Result<Decimal> {
-        self.get_value()?
-            .parse()
-            .wrap_err("Failed to parse float value")
-    }
-
-    fn get_timestamp(&self) -> Result<DateTime<FixedOffset>> {
-        let value = self.get_value()?;
-
-        let (timestamp, offset) = if value.ends_with(']') {
-            let mut datetime_parts = value.split('[');
-            let datetime_str = datetime_parts
-                .next()
-                .ok_or_eyre("Timestamp missing start of timezone block")?;
-
-            let datetime = NaiveDateTime::parse_from_str(datetime_str, "%Y%m%d%H%M%S%.f")
-                .wrap_err("Failed to parse timestamp")?;
-
-            let mut timezone_parts = datetime_parts
-                .next()
-                .ok_or_eyre("Timestamp missing timezone block")?
-                .split(':');
-            let offset_hours = timezone_parts
-                .next()
-                .ok_or_eyre("Timestamp missing timezone offset")?
-                .parse::<i8>()
-                .wrap_err("Invalid timezone offset")?;
-
-            let offset = FixedOffset::east_opt(offset_hours as i32 * 60 * 60)
-                .ok_or_eyre("Out of bounds timezone offset")?;
-
-            (datetime, offset)
-        } else {
-            // Fallback to assuming this is local time. This will have annoying daylight savings time implications
-            let datetime = NaiveDateTime::parse_from_str(&value, "%Y%m%d%H%M%S%.f")
-                .wrap_err("Failed to parse naive date value")?;
-
-            (datetime, self.get_local_time())
-        };
-
-        offset
-            .from_local_datetime(&timestamp)
-            .single()
-            .ok_or_eyre("Ambiguous date conversion")
-    }
-
-    fn get_timestamp_naive(&self) -> Result<NaiveDateTime> {
-        let value = self.get_value()?;
-        NaiveDateTime::parse_from_str(&value, "%Y%m%d%H%M%S%.f")
-            .wrap_err("Failed to parse naive date value")
-    }
-
-    fn check_currency(&self) -> Result<()> {
-        let value = self.get_value()?;
-        match value.as_ref() {
-            "CAD" => Ok(()),
-            v => Err(eyre!("Unexpected currency: '{}'", v)),
-        }
-    }
-
-    fn get_account_type(&self) -> Result<AccountType> {
-        let value = self.get_value()?;
-        match value.as_ref() {
-            "SAVINGS" => Ok(AccountType::Savings),
-            v => Err(eyre!("Unexpected account type: '{}'", v)),
-        }
-    }
-
-    fn get_transaction_type(&self) -> Result<QfxTransactionType> {
-        let value = self.get_value()?;
-        match value.as_ref() {
-            "DEBIT" => Ok(QfxTransactionType::Debit),
-            "CREDIT" => Ok(QfxTransactionType::Credit),
-            "POS" => Ok(QfxTransactionType::Pos),
-            "ATM" => Ok(QfxTransactionType::Atm),
-            "FEE" => Ok(QfxTransactionType::Fee),
-            "OTHER" => Ok(QfxTransactionType::Other),
-            v => Err(eyre!("Unexpected transaction type: '{}'", v)),
-        }
-    }
-
-    fn get_local_time(&self) -> FixedOffset {
-        match self.local_timezone.get() {
-            Some(t) => t,
-            None => {
-                let local_timezone = *Local::now().offset();
-                self.local_timezone.set(Some(local_timezone));
-                local_timezone
+                ParserState::Done => return Ok(None),
             }
         }
     }
