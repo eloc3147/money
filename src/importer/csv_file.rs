@@ -146,7 +146,7 @@ impl TransactionReader for CsvReader {
 
             importer.import(transaction).await?;
 
-            if i % 100 == 0 {
+            if i.is_multiple_of(100) {
                 progress.inc(100);
             }
 
