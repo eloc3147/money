@@ -19,7 +19,7 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::config::AccountConfig;
-use crate::db::{Db, DbHandle};
+use crate::db::{Db, DbTransaction};
 use crate::importer::categorizer::CategorizationStatus;
 use crate::importer::qfx_file::QfxReader;
 
@@ -100,10 +100,10 @@ async fn list_accounts(
 }
 
 pub trait TransactionReader {
-    async fn load(self, importer: TransactionImporter<'_>, progress: &ProgressBar) -> Result<()>;
+    async fn load(self, importer: TransactionImporter, progress: &ProgressBar) -> Result<()>;
 }
 
-struct ImportConfig<'a> {
+struct FileImportConfig<'a> {
     db: &'a Db,
     categorizer: &'a Categorizer,
     account_name: String,
@@ -112,13 +112,13 @@ struct ImportConfig<'a> {
     list_progress: &'a ProgressBar,
 }
 
-pub struct TransactionImporter<'c> {
-    conn: DbHandle,
-    categorizer: &'c Categorizer,
+pub struct TransactionImporter<'a, 'd> {
+    conn: &'a mut DbTransaction<'d>,
+    categorizer: &'a Categorizer,
     account_name: String,
 }
 
-impl<'c> TransactionImporter<'c> {
+impl<'a, 'd> TransactionImporter<'a, 'd> {
     pub async fn import<'t>(&mut self, transaction: Transaction<'t>) -> Result<()> {
         if let Some(tid) = transaction.transaction_id.as_ref()
             && tid.contains(".")
@@ -154,8 +154,8 @@ impl<'c> TransactionImporter<'c> {
     }
 }
 
-async fn import_file(config: ImportConfig<'_>) -> Result<()> {
-    let mut db_handle = config.db.open_handle().await?;
+async fn import_file(config: FileImportConfig<'_>) -> Result<()> {
+    let mut db_handle = config.db.start_transaction().await?;
 
     let file_name = config
         .file_path
@@ -168,8 +168,6 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
         config.list_progress.inc(1);
         return Ok(());
     }
-
-    db_handle.add_loaded_file(file_name).await?;
 
     let ext = config
         .file_path
@@ -196,7 +194,7 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
     ));
 
     let importer = TransactionImporter {
-        conn: db_handle,
+        conn: &mut db_handle,
         categorizer: config.categorizer,
         account_name: config.account_name,
     };
@@ -229,6 +227,9 @@ async fn import_file(config: ImportConfig<'_>) -> Result<()> {
         ext => return Err(eyre!("Unrecognized file type: {}", ext)),
     }
 
+    db_handle.add_loaded_file(file_name).await?;
+    db_handle.commit().await?;
+
     config.list_progress.inc(1);
     config.multi_progress.remove(&progress);
 
@@ -258,7 +259,7 @@ pub async fn import_files(
     let file_loading = ReceiverStream::new(file_rx)
         .map(|(account_name, file_path)| {
             // Funky stuff to get all required state to the concurrent function
-            Ok(ImportConfig {
+            Ok(FileImportConfig {
                 db,
                 categorizer,
                 account_name,

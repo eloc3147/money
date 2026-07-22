@@ -130,7 +130,7 @@ impl CsvReader {
 impl TransactionReader for CsvReader {
     async fn load(
         self,
-        mut importer: TransactionImporter<'_>,
+        mut importer: TransactionImporter<'_, '_>,
         progress: &ProgressBar,
     ) -> Result<()> {
         let mut records = self.reader.into_records();

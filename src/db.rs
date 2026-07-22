@@ -2,7 +2,7 @@ use chrono::{Local, NaiveDate, NaiveDateTime};
 use color_eyre::Result;
 use color_eyre::eyre::Context;
 use rust_decimal::Decimal;
-use sqlx::pool::{PoolConnection, PoolOptions};
+use sqlx::pool::PoolOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{PgPool, Postgres};
 
@@ -100,17 +100,17 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn open_handle(&self) -> Result<DbHandle> {
-        let conn = self.pool.acquire().await?;
-        Ok(DbHandle { conn })
+    pub async fn start_transaction<'a>(&'a self) -> Result<DbTransaction<'a>> {
+        let conn = self.pool.begin().await?;
+        Ok(DbTransaction { conn })
     }
 }
 
-pub struct DbHandle {
-    conn: PoolConnection<Postgres>,
+pub struct DbTransaction<'a> {
+    conn: sqlx::Transaction<'a, Postgres>,
 }
 
-impl DbHandle {
+impl DbTransaction<'_> {
     pub async fn add_loaded_file(&mut self, file_name: &str) -> Result<()> {
         sqlx::query("INSERT INTO loaded_files (file_path) values ($1);")
             .bind(file_name)
@@ -260,5 +260,12 @@ impl DbHandle {
         .wrap_err("Failed to add budget")?;
 
         Ok(())
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        self.conn
+            .commit()
+            .await
+            .wrap_err("Failed to commit database transaction")
     }
 }

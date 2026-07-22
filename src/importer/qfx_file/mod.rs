@@ -96,7 +96,7 @@ impl QfxReader {
 impl TransactionReader for QfxReader {
     async fn load(
         self,
-        mut importer: TransactionImporter<'_>,
+        mut importer: TransactionImporter<'_, '_>,
         progress: &ProgressBar,
     ) -> Result<()> {
         let lexer = Lexer::new(self.contents, self.encoding, self.is_xml);

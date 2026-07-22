@@ -27,7 +27,7 @@ async fn build_budgets(db: &Db, configs: &[BudgetConfig]) -> Result<()> {
         return Ok(());
     };
 
-    let mut handle = db.open_handle().await?;
+    let mut handle = db.start_transaction().await?;
     while let Some(config) = iter.next() {
         for rule in &previous.rules {
             handle
