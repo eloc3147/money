@@ -4,7 +4,7 @@ mod header;
 mod lexer;
 
 use std::borrow::Cow;
-use std::cell::{Cell, LazyCell, OnceCell};
+use std::cell::{Cell, OnceCell};
 use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
@@ -19,7 +19,9 @@ use crate::importer::qfx_file::header::StringEncoding;
 use crate::importer::qfx_file::lexer::{Key, Lexer, QfxToken, Value};
 use crate::importer::{Transaction, TransactionImporter, TransactionReader, TransactionType};
 
-const LOCAL_TIMEZONE: LazyCell<FixedOffset> = LazyCell::new(|| *Local::now().offset());
+thread_local! {
+    pub static LOCAL_TIMEZONE: Cell<FixedOffset> = Cell::new(*Local::now().offset());
+}
 
 pub struct QfxReader {
     contents: Vec<u8>,
@@ -126,7 +128,7 @@ impl TransactionReader for QfxReader {
                 })
                 .await?;
 
-            if i % 100 == 0 {
+            if i.is_multiple_of(100) {
                 progress.inc(100);
             }
 
@@ -308,7 +310,7 @@ impl ReadQfx<'_> for DateTime<FixedOffset> {
             let datetime = NaiveDateTime::parse_from_str(&value, "%Y%m%d%H%M%S%.f")
                 .wrap_err("Failed to parse naive date value")?;
 
-            (datetime, *LOCAL_TIMEZONE)
+            (datetime, LOCAL_TIMEZONE.get())
         };
 
         offset
@@ -405,6 +407,7 @@ impl ReadQfx<'_> for QfxTransactionType {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct Status<'a> {
     code: u32,
@@ -436,6 +439,7 @@ impl<'a> ReadQfx<'a> for Status<'a> {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct FinancialInstitution<'a> {
     organization: Value<'a>,
@@ -462,6 +466,7 @@ impl<'a> ReadQfx<'a> for FinancialInstitution<'a> {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct SignOnResponse<'a> {
     status: Status<'a>,
@@ -504,6 +509,7 @@ impl<'a> ReadQfx<'a> for SignOnResponse<'a> {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct SignOnMessageResponseV1<'a> {
     response: SignOnResponse<'a>,
@@ -526,6 +532,7 @@ impl<'a> ReadQfx<'a> for SignOnMessageResponseV1<'a> {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct AccountFrom {
     account_id: u32,
@@ -556,6 +563,7 @@ impl ReadQfxVariable<'_> for AccountFrom {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct Balance {
     amount: Decimal,
@@ -582,6 +590,7 @@ impl ReadQfxVariable<'_> for Balance {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct AccountTo {
     account_id: u32,

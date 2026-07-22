@@ -28,7 +28,7 @@ async fn build_budgets(db: &Db, configs: &[BudgetConfig]) -> Result<()> {
     };
 
     let mut handle = db.start_transaction().await?;
-    while let Some(config) = iter.next() {
+    for config in iter {
         for rule in &previous.rules {
             handle
                 .add_budget(
