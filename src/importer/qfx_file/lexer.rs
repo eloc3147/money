@@ -15,6 +15,16 @@ pub enum QfxToken<'a> {
     Value(Value<'a>),
 }
 
+impl Display for QfxToken<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OpenKey(k) => write!(f, "OpenKey({})", k),
+            Self::CloseKey(k) => write!(f, "CloseKey({})", k),
+            Self::Value(k) => write!(f, "Value({})", k),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum KeyType {
     Key,
@@ -325,16 +335,6 @@ impl<'a> Lexer {
                 "Close of field \"{k}\" while inside field \"{parent}\""
             )),
             t => Err(eyre!("Expected key, got: {:?}", t)),
-        }
-    }
-
-    /// Raise an error if the next token in the file is not [`CloseKey(key)`][QfxToken::CloseKey]
-    ///
-    /// This should be used to ensure the end of a field has been reached
-    pub fn expect_close(&self, key: Key<'_>) -> Result<()> {
-        match self.next()? {
-            QfxToken::CloseKey(v) if v == key => Ok(()),
-            v => Err(eyre!("Expected close key for \"{key:?}\", got: {v:?}")),
         }
     }
 }

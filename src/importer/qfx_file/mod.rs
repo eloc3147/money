@@ -702,12 +702,8 @@ impl<'a> DocumentParser {
         loop {
             match self.state.get() {
                 ParserState::NotStarted => match self.tokens.next()? {
-                    QfxToken::OpenKey(Key(b"QFX")) => self.state.set(ParserState::InOfx),
-                    t => bail!(
-                        "Expected {:?}, got: {:?}",
-                        QfxToken::OpenKey(Key(b"QFX")),
-                        t
-                    ),
+                    QfxToken::OpenKey(Key(b"OFX")) => self.state.set(ParserState::InOfx),
+                    t => bail!("Expected {}, got: {}", QfxToken::OpenKey(Key(b"QFX")), t),
                 },
                 ParserState::InOfx => match self.tokens.expect_field(b"OFX")? {
                     Some(Key(b"SIGNONMSGSRSV1")) => {
@@ -806,7 +802,9 @@ impl<'a> DocumentParser {
                             .end_date_seen
                             .check::<DateTime<FixedOffset>>(&self.tokens)?,
                         Some(Key(b"STMTTRN")) => {
-                            return StatementTransaction::read(&self.tokens).map(Some);
+                            return StatementTransaction::read(&self.tokens)
+                                .map(Some)
+                                .wrap_err("Error parsing field \"STMTTRN\"");
                         }
                         Some(key) => bail!("Unexpected key '{:?}' for state {:?}", key, self.state),
                         None => self.state.set(ParserState::InStatementResponse(k1, k2, k3)),
