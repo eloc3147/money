@@ -40,7 +40,7 @@ struct Args {
 
 #[ignore = "unused_mut"]
 fn main() -> Result<()> {
-    color_eyre::install()?;
+    money::error::install_hook();
     let args = Args::parse();
 
     let mut options = Options::default();

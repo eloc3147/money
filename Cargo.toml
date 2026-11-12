@@ -46,6 +46,7 @@ egui_extras = { version = "0.37", features = ["datepicker"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 strum = { version = "0.28", features = ["derive"] }
 jiff = { version = "0.2", default-features = false, features = ["std"] }
+backtrace = "0.3"
 
 [dev-dependencies]
 egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }

@@ -2670,6 +2670,7 @@ dependencies = [
 name = "money"
 version = "0.3.0"
 dependencies = [
+ "backtrace",
  "chrono",
  "clap",
  "color-eyre",

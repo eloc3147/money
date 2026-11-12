@@ -16,6 +16,7 @@
         "chrono",
         "clippy",
         "curdef",
+        "Demangled",
         "DTASOF",
         "DTEND",
         "DTPOSTED",
