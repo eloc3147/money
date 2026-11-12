@@ -96,6 +96,18 @@ impl DateRange {
     }
 }
 
+/// Number of `period`s that overlap `range` (at least 1 for a non-empty range).
+#[must_use]
+pub fn period_count(range: DateRange, period: Period) -> usize {
+    let mut count = 0;
+    let mut start = period.start_of(range.start);
+    while start <= range.end {
+        count += 1;
+        start = period.next(start);
+    }
+    count
+}
+
 /// Common date range choices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, VariantArray, IntoStaticStr)]
 pub enum RangePreset {
@@ -253,6 +265,36 @@ impl BinnedSeries {
             }
         }
         totals
+    }
+
+    /// Merge every series for which `keep` returns false into one series named `other`, placed
+    /// last. Nothing changes if all series are kept.
+    pub fn fold_into_other(&mut self, keep: impl Fn(&str) -> bool, other: &str) {
+        let (kept, folded): (Vec<_>, Vec<_>) = std::mem::take(&mut self.series)
+            .into_iter()
+            .partition(|s| keep(&s.name));
+        self.series = kept;
+        if folded.is_empty() {
+            return;
+        }
+        let mut merged = CategorySeries {
+            name: other.to_string(),
+            values: vec![0.0; self.periods.len()],
+            total: 0.0,
+        };
+        for series in folded {
+            merged.total += series.total;
+            for (sum, value) in merged.values.iter_mut().zip(series.values) {
+                *sum += value;
+            }
+        }
+        self.series.push(merged);
+    }
+
+    /// Category names ordered by total, largest first.
+    #[must_use]
+    pub fn names(&self) -> Vec<&str> {
+        self.series.iter().map(|s| s.name.as_str()).collect()
     }
 
     /// Smooth every series in place.
@@ -492,6 +534,17 @@ mod tests {
     }
 
     #[test]
+    fn counts_periods() {
+        let range = DateRange {
+            start: d(2024, 1, 15),
+            end: d(2024, 3, 1),
+        };
+        assert_eq!(period_count(range, Period::Month), 3);
+        assert_eq!(period_count(range, Period::Year), 1);
+        assert_eq!(period_count(range, Period::Week), 7);
+    }
+
+    #[test]
     fn range_presets() {
         let today = d(2024, 8, 15);
         let custom = DateRange {
@@ -578,6 +631,28 @@ mod tests {
         binned.apply_averaging(Averaging::Range, 0);
         assert_eq!(binned.series[0].values, vec![4.0; 4]);
         assert_eq!(Averaging::Moving.label(), "Moving average");
+    }
+
+    #[test]
+    fn folds_small_series() {
+        let series = |name: &str, total| CategorySeries {
+            name: name.into(),
+            values: vec![total / 2.0; 2],
+            total,
+        };
+        let mut binned = BinnedSeries {
+            period: Period::Year,
+            periods: vec![d(2023, 1, 1), d(2024, 1, 1)],
+            series: vec![series("A", 10.0), series("B", 4.0), series("C", 2.0)],
+        };
+        let mut unchanged = binned.clone();
+        unchanged.fold_into_other(|_| true, "Other");
+        assert_eq!(unchanged.names(), vec!["A", "B", "C"]);
+
+        binned.fold_into_other(|n| n == "A", "Other");
+        assert_eq!(binned.names(), vec!["A", "Other"]);
+        assert_eq!(binned.series[1].values, vec![3.0, 3.0]);
+        assert_eq!(binned.series[1].total, 6.0);
     }
 
     #[test]

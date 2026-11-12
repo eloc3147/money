@@ -37,17 +37,15 @@ sqlx = { version = "0.9", default-features = false, features = [
 ] }
 
 # GUI
-eframe = { version = "0.37", default-features = false, features = [
-    "accesskit",
-    "default_fonts",
-    "wayland",
-    "wgpu",
-    "x11",
-] }
+# Default features: wgpu renderer, Wayland + X11, clipboard, accessibility, system fonts.
+eframe = "0.37"
+# Bundled monochrome emoji/icon fonts, so icons render without relying on system fonts.
+egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
 egui_plot = "0.38"
 egui_extras = { version = "0.37", features = ["datepicker"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 strum = { version = "0.28", features = ["derive"] }
+jiff = { version = "0.2", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
