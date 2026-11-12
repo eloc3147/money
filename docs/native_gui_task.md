@@ -7,21 +7,21 @@ Grafana" tool into a self-contained native desktop application.
 
 | # | Requirement | Status |
 |---|-------------|--------|
-| 1 | Docs for all items, plus a check that enforces doc coverage | ☐ |
-| 2 | Unit tests, plus code coverage measurement in CI | ☐ |
-| 3 | Non-web GUI framework (no Electron/webviews) supporting Windows and Linux | ☐ |
-| 4 | SQLite as the transaction data store (replacing Postgres) | ☐ |
-| 5 | Config stays in TOML, with a UI for editing it | ☐ |
-| 6 | Rich graphs and tables comparable to a good finance program | ☐ |
-| 7 | Transactions are (re)loaded from the source files each time the program starts | ☐ |
-| 8 | GPU rendering if not significantly more complex | ☐ |
-| 9 | GUI tested on Linux (Windows testing not possible in this environment) | ☐ |
-| 10 | Mock data for testing | ☐ |
-| 11 | Progress tracked in git and in this document | ☐ |
-| 12 | View: transaction list, split by income / expense | ☐ |
-| 13 | View: stacked bar graph of expenses by category, configurable range and averaging/grouping | ☐ |
-| 14 | View: uncategorized transactions, with options for adding new rules | ☐ |
-| 15 | No hand-written lists of enum values (variant arrays, name tables); derive them with a macro library | ☐ |
+| 1 | Docs for all items, plus a check that enforces doc coverage | ✅ |
+| 2 | Unit tests, plus code coverage measurement in CI | ✅ |
+| 3 | Non-web GUI framework (no Electron/webviews) supporting Windows and Linux | ✅ |
+| 4 | SQLite as the transaction data store (replacing Postgres) | ✅ |
+| 5 | Config stays in TOML, with a UI for editing it | ✅ |
+| 6 | Rich graphs and tables comparable to a good finance program | ✅ |
+| 7 | Transactions are (re)loaded from the source files each time the program starts | ✅ |
+| 8 | GPU rendering if not significantly more complex | ✅ |
+| 9 | GUI tested on Linux (Windows testing not possible in this environment) | ✅ Linux (Windows: CI builds and runs headless tests only) |
+| 10 | Mock data for testing | ✅ |
+| 11 | Progress tracked in git and in this document | ✅ |
+| 12 | View: transaction list, split by income / expense | ✅ |
+| 13 | View: stacked bar graph of expenses by category, configurable range and averaging/grouping | ✅ |
+| 14 | View: uncategorized transactions, with options for adding new rules | ✅ |
+| 15 | No hand-written lists of enum values (variant arrays, name tables); derive them with a macro library | ✅ |
 
 ## Design decisions
 
@@ -59,3 +59,36 @@ Grafana" tool into a self-contained native desktop application.
 ## Progress log
 
 - 2026-11-11 — Surveyed existing code; chose egui/eframe + sqlx/sqlite; wrote this plan.
+- 2026-11-11 — Backend: Postgres replaced with SQLite (amounts as integer cents); categorizer
+  owns its data (no more leaked `'static` config); indicatif progress bars replaced by
+  `ImportProgress` counters; background `loader`; pure `analysis` module; deterministic mock
+  data generator writing real QFX (XML) and CSV files. Enum lists derived with `strum` (new
+  requirement 15).
+- 2026-11-11 — GUI: transactions, spending chart, uncategorized and settings views; `--mock`,
+  `--headless`, `--tab` and hidden `--screenshot` flags. Headless GUI tests with
+  `egui_kittest` (tab switching, filters, chart controls, add-rule → save → reload, settings
+  save/revert, missing config, import errors). kittest's accessibility check caught unlabeled
+  combo boxes/text fields; they are now labelled.
+- 2026-11-11 — Docs on every item (enforced by lints), QFX SGML/header tests, CI jobs for
+  doc coverage, Linux + Windows tests and an 85% line-coverage gate (currently ~90%).
+
+## Testing notes
+
+- `cargo test --all-targets` runs 61 unit tests and 8 GUI tests (no display needed).
+- The real window was launched on Linux (Wayland, VMware SVGA VM) with mock data and captured
+  with `--screenshot` on every tab. With `WGPU_BACKEND=vulkan` (lavapipe) captures are
+  correct. With the default adapter on this VM (OpenGL on VMware SVGA) the captured frame is
+  blank grey; whether that is only the read-back or also the on-screen image could not be
+  checked from this environment.
+- Windows has not been run interactively; CI builds and runs the test suite on
+  `windows-latest`.
+
+## Known limitations / follow-ups
+
+- Saving the config from the UI drops comments and reorders keys (`toml` serializer). A
+  format-preserving writer (`toml_edit`) would fix this.
+- Budgets are stored in the database but not yet shown in any view.
+- All transactions are re-imported on every start and after every config change, as required
+  "for now"; incremental import would need change detection on the source files.
+- The legacy `grafana/` dashboard was removed: it queried the Postgres schema, which no longer
+  exists.

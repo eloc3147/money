@@ -16,15 +16,22 @@ use crate::importer::{
     ImportProgress, Transaction, TransactionImporter, TransactionReader, TransactionType,
 };
 
+/// One row of a Capital One CSV export.
 struct CsvTransaction {
+    /// Date the transaction posted.
     posted_date: NaiveDate,
+    /// Merchant description.
     description: String,
+    /// Bank assigned category.
     category: String,
+    /// Amount debited, if any.
     debit: Option<Decimal>,
+    /// Amount credited, if any.
     credit: Option<Decimal>,
 }
 
 impl<'a> CsvTransaction {
+    /// Convert to a [`Transaction`]; exactly one of debit or credit must be set.
     fn into_transaction(self) -> Result<Transaction<'a>> {
         let (transaction_type, amount) = match (self.debit, self.credit) {
             (Some(debit), None) => (TransactionType::Debit, -debit),
@@ -47,12 +54,19 @@ impl<'a> CsvTransaction {
     }
 }
 
+/// Reads transactions from a Capital One CSV file.
 pub struct CsvReader {
+    /// The CSV record reader.
     reader: AsyncReader<BufReader<File>>,
+    /// Column positions found in the header row.
     columns: ColumnMap,
 }
 
 impl CsvReader {
+    /// Open a CSV file and map its header columns.
+    ///
+    /// # Errors
+    /// Fails if the file cannot be opened or the header is missing or has unknown columns.
     pub async fn open(path: &Path) -> Result<Self> {
         let mut reader = AsyncReader::from_reader(BufReader::new(
             File::open(path).await.wrap_err("Failed to open file")?,
@@ -153,17 +167,24 @@ impl TransactionReader for CsvReader {
     }
 }
 
+/// Index of each needed column within a row.
 struct ColumnMap {
     // transaction_date_col: usize,
+    /// Posted date column.
     posted_date_col: usize,
     // card_number_col: usize,
+    /// Description column.
     description_col: usize,
+    /// Category column.
     category_col: usize,
+    /// Debit column.
     debit_col: usize,
+    /// Credit column.
     credit_col: usize,
 }
 
 impl ColumnMap {
+    /// Extract the needed fields from a CSV row.
     fn unpack_transaction(&self, record: StringRecord) -> Result<CsvTransaction> {
         let posted_date = record
             .get(self.posted_date_col)
@@ -198,6 +219,7 @@ impl ColumnMap {
     }
 }
 
+/// Parse an amount, treating an empty cell as `None`.
 fn parse_optional_amount(value: &str) -> Result<Option<Decimal>> {
     if value.is_empty() {
         return Ok(None);

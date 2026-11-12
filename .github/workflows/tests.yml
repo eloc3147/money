@@ -6,64 +6,62 @@ on:
   pull_request:
     branches: ["master"]
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
 jobs:
-  cargo-check:
-    name: Run cargo check
-    runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-      - name: Restore cache
-        uses: actions/cache/restore@v4
-        id: restore-cache
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
-      - name: Run cargo check
-        run: cargo check
-      - name: Save cache
-        uses: actions/cache/save@v4
-        if: steps.restore-cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
   clippy:
-    name: Run clippy
+    name: Clippy
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -D warnings
     permissions:
       checks: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-      - name: Restore cache
-        uses: actions/cache/restore@v4
-        id: restore-cache
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
       - name: Run clippy
         uses: auguwu/clippy-action@1.4.0
         with:
           token: ${{secrets.GITHUB_TOKEN}}
-      - name: Save cache
-        uses: actions/cache/save@v4
-        if: steps.restore-cache.outputs.cache-hit != 'true'
+          check-args: --all-targets
+
+  docs:
+    name: Doc coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+      # Every item, public or private, must be documented. `missing_docs` covers the public
+      # API; clippy's `missing_docs_in_private_items` covers the rest.
+      - name: Check every item is documented
+        run: cargo clippy --all-targets -- -D missing_docs -D clippy::missing_docs_in_private_items
+      - name: Build docs (broken links fail)
+        run: cargo doc --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+      # GUI tests run headlessly via egui_kittest and need no display or GPU.
+      - name: Run tests
+        run: cargo test --all-targets
+
+  coverage:
+    name: Code coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+          tool: cargo-llvm-cov
+      - name: Measure coverage
+        run: cargo llvm-cov --all-targets --fail-under-lines 85 --summary-only

@@ -1,6 +1,8 @@
 // Compatible with Tangerine and Capital One QFX files
 
+/// File header parsing.
 mod header;
+/// Tokenizing of the document body.
 mod lexer;
 
 use std::borrow::Cow;
@@ -24,13 +26,21 @@ thread_local! {
     pub static LOCAL_TIMEZONE: Cell<FixedOffset> = Cell::new(*Local::now().offset());
 }
 
+/// Reads transactions from a QFX/OFX file.
 pub struct QfxReader {
+    /// The document body after the header.
     contents: Vec<u8>,
+    /// Whether the file is OFX 2 (XML) rather than OFX 1 (SGML).
     is_xml: bool,
+    /// Encoding declared by the header.
     encoding: StringEncoding,
 }
 
 impl QfxReader {
+    /// Open a QFX file and parse its header.
+    ///
+    /// # Errors
+    /// Fails if the file cannot be read or its header is unsupported.
     pub async fn open(path: &Path) -> Result<Self> {
         let mut reader = BufReader::new(File::open(path).await.wrap_err("Failed to open file")?);
 
@@ -140,6 +150,7 @@ impl TransactionReader for QfxReader {
 /// This should expect it's outermost field to have been opened, and must read until it's close
 /// Implementers of this trait must know the keys of any closing tags
 trait ReadQfx<'a> {
+    /// Read the value, consuming tokens up to and including its closing tag.
     fn read(lexer: &'a Lexer) -> Result<Self>
     where
         Self: Sized;
@@ -151,6 +162,7 @@ trait ReadQfx<'a> {
 /// This trait supplies the name of the opening tag, so it can be used to match a closing tag
 /// This should be used for multiple fields with the same schema
 trait ReadQfxVariable<'a> {
+    /// Read the value opened by `key`, consuming tokens up to and including its closing tag.
     fn read<'k>(lexer: &'a Lexer, key: Key<'k>) -> Result<Self>
     where
         Self: Sized;
@@ -158,11 +170,14 @@ trait ReadQfxVariable<'a> {
 
 /// Helper type for reading value fields
 struct ValueOption<T> {
+    /// The field name, for error messages.
     key: Key<'static>,
+    /// The value, once read.
     value: Option<T>,
 }
 
 impl<T> ValueOption<T> {
+    /// An empty slot for the field `key`.
     fn new<K: Into<Key<'static>>>(key: K) -> Self {
         Self {
             key: key.into(),
@@ -170,17 +185,20 @@ impl<T> ValueOption<T> {
         }
     }
 
+    /// The value, or an error naming the missing field.
     fn ok(self) -> Result<T> {
         self.value
             .ok_or_else(|| eyre!("Missing field \"{}\"", self.key))
     }
 
+    /// The value, if present.
     fn option(self) -> Option<T> {
         self.value
     }
 }
 
 impl<'a, T: ReadQfx<'a>> ValueOption<T> {
+    /// Read the value from `lexer`, failing if it was already set.
     fn fill(&mut self, lexer: &'a Lexer) -> Result<()> {
         match self.value {
             Some(_) => Err(eyre!("Duplicate field \"{}\"", self.key)),
@@ -197,11 +215,14 @@ impl<'a, T: ReadQfx<'a>> ValueOption<T> {
 
 /// Helper type for reading ignore fields
 struct FieldFlag {
+    /// The field name, set on first use for unnamed flags.
     key: OnceCell<Key<'static>>,
+    /// Whether the field has been seen.
     value: Cell<bool>,
 }
 
 impl FieldFlag {
+    /// A flag for the field `key`.
     fn new<K: Into<Key<'static>>>(key: K) -> Self {
         Self {
             key: OnceCell::from(key.into()),
@@ -209,6 +230,7 @@ impl FieldFlag {
         }
     }
 
+    /// A flag whose field name is set by the first [`Self::check_var`].
     fn unnamed() -> Self {
         Self {
             key: OnceCell::new(),
@@ -216,6 +238,7 @@ impl FieldFlag {
         }
     }
 
+    /// Read and discard the field, failing if it was already seen.
     fn check<'a, T: ReadQfx<'a>>(&self, lexer: &'a Lexer) -> Result<()> {
         let key_name = self.key.get().ok_or_eyre("Field flag missing name")?;
 
@@ -228,6 +251,7 @@ impl FieldFlag {
         Ok(())
     }
 
+    /// Read and discard a field which may appear under one of several names, failing if it was already seen.
     fn check_var<'a, K: Into<Key<'static>>, T: ReadQfxVariable<'a>>(
         &self,
         key: K,
@@ -337,8 +361,10 @@ impl ReadQfx<'_> for NaiveDateTime {
     }
 }
 
+/// Status severity.
 #[derive(Debug)]
 enum Severity {
+    /// Informational.
     Info,
 }
 
@@ -351,8 +377,10 @@ impl ReadQfx<'_> for Severity {
     }
 }
 
+/// Response language.
 #[derive(Debug)]
 enum Language {
+    /// English (`ENG`).
     English,
 }
 
@@ -365,8 +393,10 @@ impl ReadQfx<'_> for Language {
     }
 }
 
+/// Statement currency.
 #[derive(Debug)]
 enum Currency {
+    /// Canadian dollars (`CAD`).
     CanadianDollar,
 }
 
@@ -379,9 +409,12 @@ impl<'a> ReadQfx<'a> for Currency {
     }
 }
 
+/// Bank account type.
 #[derive(Debug)]
 pub enum AccountType {
+    /// A chequing account.
     Chequing,
+    /// A savings account.
     Savings,
 }
 
@@ -395,13 +428,20 @@ impl ReadQfx<'_> for AccountType {
     }
 }
 
+/// The `TRNTYPE` of a statement transaction.
 #[derive(Debug)]
 pub enum QfxTransactionType {
+    /// Generic debit.
     Debit,
+    /// Generic credit.
     Credit,
+    /// Point of sale purchase.
     Pos,
+    /// ATM transaction.
     Atm,
+    /// Bank fee.
     Fee,
+    /// Anything else.
     Other,
 }
 
@@ -419,11 +459,15 @@ impl ReadQfx<'_> for QfxTransactionType {
     }
 }
 
+/// A `STATUS` aggregate.
 #[allow(unused)]
 #[derive(Debug)]
 struct Status<'a> {
+    /// Status code (0 means success).
     code: u32,
+    /// Severity.
     severity: Severity,
+    /// Optional message.
     message: Option<Value<'a>>,
 }
 
@@ -451,10 +495,13 @@ impl<'a> ReadQfx<'a> for Status<'a> {
     }
 }
 
+/// The `FI` aggregate identifying the institution.
 #[allow(unused)]
 #[derive(Debug)]
 struct FinancialInstitution<'a> {
+    /// Organization name.
     organization: Value<'a>,
+    /// Institution id.
     institution_id: u32,
 }
 
@@ -478,14 +525,21 @@ impl<'a> ReadQfx<'a> for FinancialInstitution<'a> {
     }
 }
 
+/// The `SONRS` sign-on response.
 #[allow(unused)]
 #[derive(Debug)]
 struct SignOnResponse<'a> {
+    /// Status.
     status: Status<'a>,
+    /// Server time.
     server_date: DateTime<FixedOffset>,
+    /// Response language.
     language: Language,
+    /// Last profile update.
     last_profile_update: Option<DateTime<FixedOffset>>,
+    /// Institution, if reported.
     financial_institution: Option<FinancialInstitution<'a>>,
+    /// Intuit bank id (`INTU.BID`).
     bank_id: u32,
 }
 
@@ -521,9 +575,11 @@ impl<'a> ReadQfx<'a> for SignOnResponse<'a> {
     }
 }
 
+/// The `SIGNONMSGSRSV1` aggregate.
 #[allow(unused)]
 #[derive(Debug)]
 struct SignOnMessageResponseV1<'a> {
+    /// The sign-on response.
     response: SignOnResponse<'a>,
 }
 
@@ -544,11 +600,15 @@ impl<'a> ReadQfx<'a> for SignOnMessageResponseV1<'a> {
     }
 }
 
+/// The `BANKACCTFROM`/`CCACCTFROM` account identification.
 #[allow(unused)]
 #[derive(Debug)]
 struct AccountFrom {
+    /// Account number.
     account_id: u64,
+    /// Bank routing id.
     bank_id: Option<u32>,
+    /// Account type.
     account_type: Option<AccountType>,
 }
 
@@ -575,10 +635,13 @@ impl ReadQfxVariable<'_> for AccountFrom {
     }
 }
 
+/// A `LEDGERBAL`/`AVAILBAL` balance.
 #[allow(unused)]
 #[derive(Debug)]
 struct Balance {
+    /// Balance amount.
     amount: Decimal,
+    /// When the balance applied.
     timestamp: DateTime<FixedOffset>,
 }
 
@@ -602,9 +665,11 @@ impl ReadQfxVariable<'_> for Balance {
     }
 }
 
+/// The `CCACCTTO` transfer destination.
 #[allow(unused)]
 #[derive(Debug)]
 struct AccountTo {
+    /// Destination account number.
     account_id: u32,
 }
 
@@ -625,15 +690,22 @@ impl ReadQfx<'_> for AccountTo {
     }
 }
 
+/// A `STMTTRN` statement transaction.
 #[derive(Debug)]
 pub struct StatementTransaction<'a> {
+    /// Transaction type.
     transaction_type: QfxTransactionType,
+    /// Posted date.
     date_posted: DateTime<FixedOffset>,
     // user_date: Option<NaiveDateTime>,
+    /// Signed amount.
     amount: Decimal,
+    /// Bank transaction id (`FITID`).
     transaction_id: Cow<'a, str>,
+    /// Transaction name.
     name: Cow<'a, str>,
     // account_to: Option<AccountTo>,
+    /// Memo, if any.
     memo: Option<Cow<'a, str>>,
 }
 
@@ -677,32 +749,53 @@ impl<'a> ReadQfx<'a> for StatementTransaction<'a> {
     }
 }
 
+/// Position of the parser within the document structure.
 #[derive(Debug, Clone, Copy)]
 enum ParserState {
+    /// Before the root `OFX` tag.
     NotStarted,
+    /// Inside `OFX`.
     InOfx,
+    /// Inside an institution message set (bank or credit card).
     InInstitutionMessage(Key<'static>),
+    /// Inside a statement transaction response.
     InStatementTransactionResponse(Key<'static>, Key<'static>),
+    /// Inside a statement response.
     InStatementResponse(Key<'static>, Key<'static>, Key<'static>),
+    /// Inside the transaction list.
     ReadTransactionList(Key<'static>, Key<'static>, Key<'static>),
+    /// The document has been fully read.
     Done,
 }
 
+/// Streams statement transactions out of an OFX document.
 pub struct DocumentParser {
+    /// Token source.
     tokens: Lexer,
+    /// Current position.
     state: Cell<ParserState>,
+    /// Sign-on response seen.
     sign_on_message_response_seen: FieldFlag,
+    /// Transaction id seen.
     transaction_id_seen: FieldFlag,
+    /// Status seen.
     status_seen: FieldFlag,
+    /// Currency seen.
     currency_seen: FieldFlag,
+    /// Account identification seen.
     account_from_seen: FieldFlag,
+    /// Ledger balance seen.
     ledger_balance_seen: FieldFlag,
+    /// Available balance seen.
     available_balance_seen: FieldFlag,
+    /// List start date seen.
     start_date_seen: FieldFlag,
+    /// List end date seen.
     end_date_seen: FieldFlag,
 }
 
 impl<'a> DocumentParser {
+    /// Create a parser over `lexer`.
     fn new(lexer: Lexer) -> Self {
         Self {
             tokens: lexer,
@@ -719,6 +812,10 @@ impl<'a> DocumentParser {
         }
     }
 
+    /// Read up to and return the next statement transaction, or `None` at the end of the document.
+    ///
+    /// # Errors
+    /// Fails on malformed or unexpected document structure.
     fn next_statement_transaction(&'a self) -> Result<Option<StatementTransaction<'a>>> {
         loop {
             match self.state.get() {
@@ -834,5 +931,135 @@ impl<'a> DocumentParser {
                 ParserState::Done => return Ok(None),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An OFX 1.02 (SGML) bank statement with sign-on and balance aggregates.
+    const SGML: &str = "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:USASCII\n\
+        CHARSET:1252\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n\
+        <OFX><SIGNONMSGSRSV1><SONRS><STATUS><CODE>0<SEVERITY>INFO<MESSAGE>OK</STATUS>\
+        <DTSERVER>20240105120000.000[-5:EST]<LANGUAGE>ENG<DTPROFUP>20240101120000.000[-5:EST]\
+        <FI><ORG>Bank<FID>123</FI><INTU.BID>456</SONRS></SIGNONMSGSRSV1>\
+        <BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS>\
+        <STMTRS><CURDEF>CAD<BANKACCTFROM><BANKID>1<ACCTID>789<ACCTTYPE>SAVINGS</BANKACCTFROM>\
+        <BANKTRANLIST><DTSTART>20240101120000<DTEND>20240131120000\
+        <STMTTRN><TRNTYPE>POS<DTPOSTED>20240102120000.000[-5:EST]<DTUSER>20240102120000\
+        <TRNAMT>-12.34<FITID>1<NAME>POS CAFE<CCACCTTO><ACCTID>0</CCACCTTO><MEMO>coffee</STMTTRN>\
+        <STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20240103120000<DTUSER>20240103120000\
+        <TRNAMT>100.00<FITID>2<NAME>PAYROLL {LQ}ACME{RQ}<CCACCTTO><ACCTID>0</CCACCTTO></STMTTRN>\
+        </BANKTRANLIST><LEDGERBAL><BALAMT>87.66<DTASOF>20240131120000.000[-5:EST]</LEDGERBAL>\
+        <AVAILBAL><BALAMT>87.66<DTASOF>20240131120000.000[-5:EST]</AVAILBAL>\
+        </STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>\n";
+
+    /// Write `text` to a file, replacing `{LQ}`/`{RQ}` with Windows-1252 curly quote bytes.
+    async fn open_text(text: &[u8]) -> Result<QfxReader> {
+        let text = String::from_utf8_lossy(text);
+        let mut bytes = Vec::new();
+        for (idx, part) in text.split("{LQ}").enumerate() {
+            if idx > 0 {
+                bytes.push(0x93);
+            }
+            for (idx, part) in part.split("{RQ}").enumerate() {
+                if idx > 0 {
+                    bytes.push(0x94);
+                }
+                bytes.extend_from_slice(part.as_bytes());
+            }
+        }
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("statement.qfx");
+        std::fs::write(&path, bytes)?;
+        QfxReader::open(&path).await
+    }
+
+    /// (type, amount, name, memo) of a parsed transaction.
+    type Parsed = (QfxTransactionType, Decimal, String, Option<String>);
+
+    /// Parse every statement transaction in `reader`.
+    fn transactions(reader: QfxReader) -> Result<Vec<Parsed>> {
+        let lexer = Lexer::new(reader.contents, reader.encoding, reader.is_xml);
+        let parser = DocumentParser::new(lexer);
+        let mut out = Vec::new();
+        while let Some(t) = parser.next_statement_transaction()? {
+            out.push((
+                t.transaction_type,
+                t.amount,
+                t.name.into_owned(),
+                t.memo.map(Cow::into_owned),
+            ));
+        }
+        Ok(out)
+    }
+
+    #[tokio::test]
+    async fn parses_sgml_statement() {
+        let reader = open_text(SGML.as_bytes()).await.unwrap();
+        assert!(!reader.is_xml);
+        assert_eq!(reader.encoding, StringEncoding::Windows1252);
+        let parsed = transactions(reader).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert!(matches!(parsed[0].0, QfxTransactionType::Pos));
+        assert_eq!(parsed[0].1, Decimal::new(-1234, 2));
+        assert_eq!(parsed[0].2, "POS CAFE");
+        assert_eq!(parsed[0].3.as_deref(), Some("coffee"));
+        assert!(matches!(parsed[1].0, QfxTransactionType::Credit));
+        // Windows-1252 smart quotes are decoded.
+        assert_eq!(parsed[1].2, "PAYROLL \u{201c}ACME\u{201d}");
+    }
+
+    #[tokio::test]
+    async fn rejects_bad_documents() {
+        assert!(open_text(b"").await.is_err(), "empty file");
+        assert!(open_text(b"\x01").await.is_err(), "binary file");
+        assert!(
+            open_text(SGML.replace("VERSION:102", "VERSION:103").as_bytes())
+                .await
+                .is_err(),
+            "unsupported version"
+        );
+        assert!(
+            open_text(SGML.replace("OFXHEADER:100", "OFXHEADER:200").as_bytes())
+                .await
+                .is_err(),
+            "unsupported header"
+        );
+        for bad in [
+            SGML.replace("<TRNTYPE>POS", "<TRNTYPE>WIRE"),
+            SGML.replace("<CURDEF>CAD", "<CURDEF>USD"),
+            SGML.replace("<LANGUAGE>ENG", "<LANGUAGE>FRA"),
+            SGML.replace("<SEVERITY>INFO<MESSAGE>", "<SEVERITY>ERROR<MESSAGE>"),
+            SGML.replace("<ACCTTYPE>SAVINGS", "<ACCTTYPE>MONEYMRKT"),
+            SGML.replace("<TRNAMT>-12.34", "<TRNAMT>abc"),
+            SGML.replace("<FITID>1", ""),
+            SGML.replace("<CURDEF>CAD", "<CURDEF>CAD<CURDEF>CAD"),
+            SGML.replace("<DTSTART>20240101120000", "<BOGUS>1"),
+            SGML.replace("<DTPOSTED>20240102120000.000[-5:EST]", "<DTPOSTED>2024"),
+        ] {
+            let reader = open_text(bad.as_bytes()).await.unwrap();
+            assert!(transactions(reader).is_err());
+        }
+    }
+
+    /// Variations seen in RBC `.ofx` exports.
+    #[tokio::test]
+    async fn accepts_rbc_variations() {
+        let rbc = SGML
+            .replace("SECURITY:NONE", "SECURITY:TYPE1")
+            .replace("<FI><ORG>Bank<FID>123</FI>", "")
+            .replace(
+                "<ACCTID>789<ACCTTYPE>SAVINGS",
+                "<ACCTID>12345678901<ACCTTYPE>CHECKING",
+            )
+            .replace("<TRNUID>1", "<TRNUID>RBC-1")
+            .replace("<DTPOSTED>20240102120000.000[-5:EST]", "<DTPOSTED>20240102")
+            .replace("<DTUSER>20240102120000", "")
+            .replace("<CCACCTTO><ACCTID>0</CCACCTTO>", "");
+        let parsed = transactions(open_text(rbc.as_bytes()).await.unwrap()).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].1, Decimal::new(-1234, 2));
     }
 }

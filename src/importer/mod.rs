@@ -1,7 +1,9 @@
 //! Importing of bank statement files (QFX and CSV) into the database.
 
 pub mod categorizer;
+/// Capital One CSV statements.
 mod csv_file;
+/// OFX/QFX (SGML and XML) statements.
 mod qfx_file;
 
 use std::borrow::Cow;
