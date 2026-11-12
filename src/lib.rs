@@ -25,5 +25,5 @@ pub mod importer;
 pub mod loader;
 pub mod model;
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "dev-mode")]
 pub mod mock;
