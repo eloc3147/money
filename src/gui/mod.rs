@@ -4,6 +4,7 @@
 //! they return an [`Action`] which the app performs (saving the config and reloading).
 
 pub mod chart;
+pub mod error;
 pub mod range;
 pub mod settings;
 pub mod style;
@@ -20,6 +21,7 @@ use eframe::egui::{self, RichText, Ui};
 use strum::{IntoStaticStr, VariantArray};
 
 use crate::config::AppConfig;
+use crate::error::ErrorReport;
 use crate::loader::{LoadHandle, LoadOptions, Loaded, spawn_load};
 use crate::model::Dataset;
 
@@ -54,7 +56,7 @@ enum LoadState {
     /// The last load succeeded.
     Ready,
     /// The last load failed.
-    Failed(String),
+    Failed(ErrorReport),
     /// There is no config file yet.
     NoConfig,
 }
@@ -94,6 +96,8 @@ pub struct MoneyApp {
     pub uncategorized: uncategorized::UncategorizedView,
     /// Settings view state.
     pub settings: settings::SettingsView,
+    /// Error display state.
+    pub error_view: error::ErrorView,
     /// Optional screenshot-and-exit request.
     screenshot: Option<ScreenshotRequest>,
     /// Status message shown in the bottom bar.
@@ -132,6 +136,7 @@ impl MoneyApp {
             chart: chart::ChartView::new(today),
             uncategorized: uncategorized::UncategorizedView::default(),
             settings,
+            error_view: error::ErrorView::default(),
             screenshot: None,
             status: None,
         }
@@ -167,7 +172,7 @@ impl MoneyApp {
 
     /// The error from the last load, if it failed.
     #[must_use]
-    pub fn error(&self) -> Option<&str> {
+    pub fn error(&self) -> Option<&ErrorReport> {
         match &self.state {
             LoadState::Failed(error) => Some(error),
             _ => None,
@@ -213,7 +218,7 @@ impl MoneyApp {
                     self.settings.set_config(&config);
                     self.config = config;
                 }
-                self.state = LoadState::Failed(format!("{error:?}"));
+                self.state = LoadState::Failed(error);
             }
         }
     }
@@ -337,16 +342,10 @@ impl MoneyApp {
                         self.tab = Tab::Settings;
                     }
                 });
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(error)
-                                .monospace()
-                                .color(ui.visuals().error_fg_color),
-                        )
-                        .wrap(),
-                    );
-                });
+                ui.add_space(8.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("error-scroll")
+                    .show(ui, |ui| self.error_view.ui(ui, &error));
                 false
             }
             LoadState::NoConfig => {

@@ -11,6 +11,7 @@
 //! - [`loader`]: the background load pipeline tying the above together.
 //! - [`model`]: records read back for display.
 //! - [`analysis`]: pure aggregation used by the views.
+//! - [`error`]: structured, colorless error reports passed out of background work.
 //! - [`gui`]: the desktop application.
 //! - [`mock`]: deterministic mock data for testing and demos.
 
@@ -20,6 +21,7 @@
 pub mod analysis;
 pub mod config;
 pub mod db;
+pub mod error;
 pub mod gui;
 pub mod importer;
 pub mod loader;

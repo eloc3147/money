@@ -7,10 +7,11 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use color_eyre::Result;
-use color_eyre::eyre::{Context, eyre};
+use color_eyre::eyre::Context;
 
 use crate::config::{AppConfig, BudgetConfig};
 use crate::db::{Db, DbLocation};
+use crate::error::{ErrorReport, install_hook};
 use crate::importer::categorizer::Categorizer;
 use crate::importer::{ImportProgress, import_files};
 use crate::model::Dataset;
@@ -153,17 +154,17 @@ pub struct LoadHandle {
     /// Live progress.
     pub status: Arc<LoadStatus>,
     /// Receives the result once the load finishes.
-    result: Receiver<Result<Loaded>>,
+    result: Receiver<Result<Loaded, ErrorReport>>,
 }
 
 impl LoadHandle {
     /// Return the result if the load has finished.
-    pub fn try_take(&self) -> Option<Result<Loaded>> {
+    pub fn try_take(&self) -> Option<Result<Loaded, ErrorReport>> {
         match self.result.try_recv() {
             Ok(result) => Some(result),
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) => {
-                Some(Err(eyre!("Loader thread exited unexpectedly")))
+                Some(Err(ErrorReport::msg("Loader thread exited unexpectedly")))
             }
         }
     }
@@ -172,17 +173,20 @@ impl LoadHandle {
     ///
     /// # Errors
     /// Returns the load error, if any.
-    pub fn wait(self) -> Result<Loaded> {
+    pub fn wait(self) -> Result<Loaded, ErrorReport> {
         self.result
             .recv()
-            .map_err(|_| eyre!("Loader thread exited unexpectedly"))?
+            .map_err(|_| ErrorReport::msg("Loader thread exited unexpectedly"))?
     }
 }
 
 /// Start loading on a background thread. `on_done` is called after the result is sent (the
 /// GUI uses it to request a repaint).
+///
+/// Errors are returned as [`ErrorReport`]s: plain data, free of terminal formatting.
 #[must_use]
 pub fn spawn_load(options: LoadOptions, on_done: impl FnOnce() + Send + 'static) -> LoadHandle {
+    install_hook();
     let status = Arc::new(LoadStatus::default());
     let (tx, rx) = std::sync::mpsc::channel();
     let thread_status = Arc::clone(&status);
@@ -191,7 +195,8 @@ pub fn spawn_load(options: LoadOptions, on_done: impl FnOnce() + Send + 'static)
             .enable_all()
             .build()
             .wrap_err("Failed to start async runtime")
-            .and_then(|rt| rt.block_on(load(&options, &thread_status)));
+            .and_then(|rt| rt.block_on(load(&options, &thread_status)))
+            .map_err(ErrorReport::from);
         // The receiver may have been dropped if the GUI started another load; that's fine.
         let _ = tx.send(result);
         on_done();
@@ -244,7 +249,8 @@ mod tests {
             }
             std::thread::yield_now();
         };
-        assert!(format!("{err:#}").contains("config"), "{err:#}");
+        assert_eq!(err.message, "Failed to load config");
+        assert!(err.causes[0].contains("missing.toml"), "{err}");
     }
 
     #[tokio::test]

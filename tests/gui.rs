@@ -308,18 +308,33 @@ fn import_errors_are_shown() {
     );
     let mut harness = harness(app);
     wait_for_load(&mut harness);
+    let report = harness.state().error().unwrap().clone();
     assert!(
-        harness
-            .state()
-            .error()
-            .unwrap()
-            .contains("/definitely/missing")
+        report.to_string().contains("/definitely/missing"),
+        "{report}"
+    );
+    assert!(
+        !report.to_string().contains('\u{1b}'),
+        "no ANSI color codes"
     );
     assert!(
         harness
             .query_by_label("Failed to load transactions")
             .is_some()
     );
+    // The message, each cause and the stack trace are shown as separate widgets.
+    assert!(harness.query_by_label(&report.message).is_some());
+    for cause in &report.causes {
+        assert!(
+            harness.query_by_label(cause).is_some(),
+            "cause {cause:?} shown"
+        );
+    }
+    assert!(harness.query_by_label_contains("Stack trace (").is_some());
+    harness.get_by_label_contains("Show all ").click();
+    harness.run_ok();
+    assert!(harness.state().error_view.show_all_frames);
+    maybe_render(&mut harness, "load-error");
     // The config is still editable after a failed import.
     assert_eq!(harness.state().config().account.len(), 1);
     harness.get_by_label("⚙ Open settings").click();

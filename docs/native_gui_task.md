@@ -22,6 +22,7 @@ Grafana" tool into a self-contained native desktop application.
 | 13 | View: stacked bar graph of expenses by category, configurable range and averaging/grouping | ✅ |
 | 14 | View: uncategorized transactions, with options for adding new rules | ✅ |
 | 15 | No hand-written lists of enum values (variant arrays, name tables); derive them with a macro library | ✅ |
+| 16 | Errors from background work are returned in an easily parsable, colorless format and rendered in the GUI as a readable stack trace | ✅ |
 
 ## Design decisions
 
@@ -52,6 +53,15 @@ Grafana" tool into a self-contained native desktop application.
   (`IntoStaticStr`) and parsing (`EnumString`) are derived, never written out by hand, so
   adding a variant can't leave a drop-down or name table stale. (Added mid-task at the
   user's request.)
+- **Error reports (requirement 16, added after the first PR push):** `error::install_hook`
+  replaces color-eyre's report hook with a plain-text one that records where an error was
+  raised and captures a backtrace. Background work hands the GUI an
+  [`ErrorReport`](../src/error.rs) (message, cause chain, source location, stack frames; serde
+  serializable) instead of a pre-formatted string, so no ANSI color codes reach the UI. The
+  GUI shows the message, numbered causes and location, a "Copy report" button, and a stack
+  table with application frames highlighted (std/dependency frames behind a toggle).
+  color-eyre's panic hook is kept for terminal panics. The location is where the error was
+  *first* raised, which points at the real cause rather than the outermost `wrap_err`.
 - **Doc coverage:** `#![deny(missing_docs)]` plus `clippy::missing_docs_in_private_items`
   are enabled crate-wide, so CI (clippy with `-D warnings`) fails on any undocumented item.
 - **Code coverage:** `cargo llvm-cov` in CI with a minimum line-coverage threshold.
@@ -72,9 +82,17 @@ Grafana" tool into a self-contained native desktop application.
 - 2026-11-11 — Docs on every item (enforced by lints), QFX SGML/header tests, CI jobs for
   doc coverage, Linux + Windows tests and an 85% line-coverage gate (currently ~90%).
 
+- 2026-11-11 — Requirement 16: load errors were shown as the raw color-eyre terminal output
+  (all red, with escape codes). Added `ErrorReport` + plain eyre hook, loader returns
+  structured reports, and a GUI error view with cause chain and stack trace. Hook-dependent
+  tests live in `tests/error_report.rs` (their own process, so the hook is installed before
+  any report is created).
+
 ## Testing notes
 
-- `cargo test --all-targets` runs 61 unit tests and 8 GUI tests (no display needed).
+- `cargo test --all-targets` runs 65 unit tests, 2 error-report tests and 8 GUI tests (no
+  display needed). Resolving backtraces makes the error-report tests take ~15 s in debug
+  builds.
 - The real window was launched on Linux (Wayland, VMware SVGA VM) with mock data and captured
   with `--screenshot` on every tab. With `WGPU_BACKEND=vulkan` (lavapipe) captures are
   correct. With the default adapter on this VM (OpenGL on VMware SVGA) the captured frame is

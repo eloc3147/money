@@ -35,7 +35,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    color_eyre::install()?;
+    money::error::install_hook();
     let args = Args::parse();
 
     let data_dir = dirs::data_dir()
