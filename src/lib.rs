@@ -2,7 +2,7 @@
 //!
 //! Bank statements (QFX and CSV) are imported from configured account directories into a
 //! SQLite database on every start, categorized by rules from a TOML config, and shown in a
-//! native [`egui`](eframe::egui) GUI.
+//! native [`egui`] GUI.
 //!
 //! Module overview:
 //! - [`config`]: the TOML configuration and helpers to edit it.

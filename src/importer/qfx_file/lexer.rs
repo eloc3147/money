@@ -8,10 +8,14 @@ use encoding_rs::{Encoding, UTF_8, WINDOWS_1252};
 
 use crate::importer::qfx_file::header::StringEncoding;
 
+/// A token in an OFX document.
 #[derive(Debug)]
 pub enum QfxToken<'a> {
+    /// An opening tag, e.g. `<STMTTRN>`.
     OpenKey(Key<'a>),
+    /// A closing tag, e.g. `</STMTTRN>`.
     CloseKey(Key<'a>),
+    /// The text value of a leaf field.
     Value(Value<'a>),
 }
 
@@ -25,12 +29,16 @@ impl Display for QfxToken<'_> {
     }
 }
 
+/// Whether a tag opens or closes a field.
 #[derive(Clone, Copy)]
 enum KeyType {
+    /// An opening tag.
     Key,
+    /// A closing tag.
     CloseKey,
 }
 
+/// Number of leading ASCII whitespace bytes.
 const fn count_leading_ascii(buf: &[u8]) -> usize {
     let mut count = 0;
     let mut bytes = buf;
@@ -45,6 +53,7 @@ const fn count_leading_ascii(buf: &[u8]) -> usize {
     count
 }
 
+/// Number of trailing ASCII whitespace bytes.
 const fn count_trailing_ascii(buf: &[u8]) -> usize {
     let mut count = 0;
     let mut bytes = buf;
@@ -59,6 +68,7 @@ const fn count_trailing_ascii(buf: &[u8]) -> usize {
     count
 }
 
+/// Shrink `range` within `buf` to exclude surrounding ASCII whitespace.
 fn strip_ascii_range(buf: &[u8], range: Range<usize>) -> Range<usize> {
     let selected = &buf[range.clone()];
     let leading = count_leading_ascii(selected);
@@ -69,6 +79,7 @@ fn strip_ascii_range(buf: &[u8], range: Range<usize>) -> Range<usize> {
     }
 }
 
+/// The name of an OFX tag, as raw bytes.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Key<'a>(pub &'a [u8]);
 
@@ -96,14 +107,20 @@ impl<'a> Display for Key<'a> {
     }
 }
 
+/// A decoded field value.
 pub type Value<'a> = Cow<'a, str>;
 
+/// Result of scanning for the next token.
 struct TokenSearch {
+    /// Bytes consumed, including the token.
     consumed: usize,
+    /// Byte range of the tag name or value.
     value_range: Range<usize>,
+    /// The tag kind, or `None` for a value.
     key_type: Option<KeyType>,
 }
 
+/// Find the next tag or value at the start of `buf`.
 fn find_token(buf: &[u8]) -> Result<TokenSearch> {
     let mut key_type = None;
 
@@ -179,18 +196,30 @@ fn find_token(buf: &[u8]) -> Result<TokenSearch> {
     })
 }
 
+/// Tokenizes an OFX document.
+///
+/// SGML files omit closing tags for leaf values; the lexer tracks the last open tag so the
+/// parser sees a consistent stream either way.
 pub struct Lexer {
+    /// The document body.
     data: Vec<u8>,
+    /// Decoder for field values.
     decoder: &'static Encoding,
+    /// Whether explicit closing tags of leaf fields should be swallowed (XML files have them, SGML files do not).
     hide_field_close: bool,
     // State
+    /// Range of the most recent opening tag.
     last_open: Cell<Option<Range<usize>>>,
+    /// Bytes consumed so far.
     consumed: Cell<usize>,
+    /// Whether the previous token was a value.
     last_item_was_value: Cell<bool>,
+    /// Set after an error; the lexer must not be used again.
     failed: Cell<bool>,
 }
 
 impl<'a> Lexer {
+    /// Create a lexer over a document body.
     pub fn new(data: Vec<u8>, string_encoding: StringEncoding, hide_field_close: bool) -> Self {
         let decoder = match string_encoding {
             StringEncoding::Utf8 => UTF_8,
