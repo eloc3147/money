@@ -2,19 +2,17 @@
 authors = ["Kinnon McAlister <kinnonmcalister@gmail.com>"]
 edition = "2024"
 name = "money"
-version = "0.2.2"
+version = "0.3.0"
 
 [dependencies]
 # Core
 color-eyre = "0.6.3"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs"] }
 futures = "0.3"
 tokio-stream = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 
 # CLI
-console = "0.16.0"
-indicatif = "0.18.0"
 clap = { version = "4.5.54", features = ["derive"] }
 
 # OS Info
@@ -29,15 +27,31 @@ encoding_rs = "0.8.35"
 chrono = { version = "0.4.40", features = ["std", "clock", "serde"] }
 self_cell = "1.2.0"
 patricia_tree = "0.10.1"
-rust_decimal = "1.39.0"
+rust_decimal = { version = "1.39.0", features = ["serde-with-str"] }
 
 # Data store
 sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",
-    "postgres",
+    "sqlite",
     "chrono",
-    "rust_decimal",
 ] }
+
+# GUI
+eframe = { version = "0.37", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "wayland",
+    "wgpu",
+    "x11",
+] }
+egui_plot = "0.38"
+egui_extras = { version = "0.37", features = ["datepicker"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+strum = { version = "0.28", features = ["derive"] }
+
+[dev-dependencies]
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
+tempfile = "3.27.0"
 
 [profile.release]
 debug = true

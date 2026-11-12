@@ -8,12 +8,13 @@ use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail};
 use csv_async::{AsyncReader, StringRecord};
 use futures::TryStreamExt;
-use indicatif::ProgressBar;
 use rust_decimal::Decimal;
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-use crate::importer::{Transaction, TransactionImporter, TransactionReader, TransactionType};
+use crate::importer::{
+    ImportProgress, Transaction, TransactionImporter, TransactionReader, TransactionType,
+};
 
 struct CsvTransaction {
     posted_date: NaiveDate,
@@ -131,11 +132,10 @@ impl TransactionReader for CsvReader {
     async fn load(
         self,
         mut importer: TransactionImporter<'_, '_>,
-        progress: &ProgressBar,
+        progress: &ImportProgress,
     ) -> Result<()> {
         let mut records = self.reader.into_records();
 
-        let mut i = 0usize;
         while let Some(row) = records.try_next().await.wrap_err("Failed to read row")? {
             let transaction = self
                 .columns
@@ -146,11 +146,7 @@ impl TransactionReader for CsvReader {
 
             importer.import(transaction).await?;
 
-            if i.is_multiple_of(100) {
-                progress.inc(100);
-            }
-
-            i += 1;
+            progress.add_transaction();
         }
 
         Ok(())
