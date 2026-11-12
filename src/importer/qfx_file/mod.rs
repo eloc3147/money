@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::cell::{Cell, OnceCell};
 use std::path::Path;
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
+use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveDateTime, TimeZone};
 use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail, eyre};
 use indicatif::ProgressBar;
@@ -269,6 +269,15 @@ impl ReadQfx<'_> for u32 {
     }
 }
 
+impl ReadQfx<'_> for u64 {
+    fn read(lexer: &Lexer) -> Result<Self> {
+        lexer
+            .expect_value()?
+            .parse()
+            .wrap_err("Failed to parse u32 value")
+    }
+}
+
 impl ReadQfx<'_> for Decimal {
     fn read(lexer: &Lexer) -> Result<Self> {
         lexer
@@ -291,15 +300,18 @@ impl ReadQfx<'_> for DateTime<FixedOffset> {
             let datetime = NaiveDateTime::parse_from_str(datetime_str, "%Y%m%d%H%M%S%.f")
                 .wrap_err("Failed to parse timestamp")?;
 
-            let mut timezone_parts = datetime_parts
+            let timezone_offset_str = datetime_parts
                 .next()
                 .ok_or_eyre("Timestamp missing timezone block")?
-                .split(':');
-            let offset_hours = timezone_parts
+                .split("]")
                 .next()
-                .ok_or_eyre("Timestamp missing timezone offset")?
+                .unwrap()
+                .split(':')
+                .next()
+                .unwrap();
+            let offset_hours = timezone_offset_str
                 .parse::<i8>()
-                .wrap_err("Invalid timezone offset")?;
+                .wrap_err_with(|| format!("Invalid timezone offset: {:?}", timezone_offset_str))?;
 
             let offset = FixedOffset::east_opt(offset_hours as i32 * 60 * 60)
                 .ok_or_eyre("Out of bounds timezone offset")?;
@@ -308,6 +320,8 @@ impl ReadQfx<'_> for DateTime<FixedOffset> {
         } else {
             // Fallback to assuming this is local time. This will have annoying daylight savings time implications
             let datetime = NaiveDateTime::parse_from_str(&value, "%Y%m%d%H%M%S%.f")
+                .or(NaiveDate::parse_from_str(&value, "%Y%m%d")
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap()))
                 .wrap_err("Failed to parse naive date value")?;
 
             (datetime, LOCAL_TIMEZONE.get())
@@ -371,12 +385,14 @@ impl<'a> ReadQfx<'a> for Currency {
 
 #[derive(Debug)]
 pub enum AccountType {
+    Chequing,
     Savings,
 }
 
 impl ReadQfx<'_> for AccountType {
     fn read(lexer: &Lexer) -> Result<Self> {
         match lexer.expect_value()?.as_ref() {
+            "CHECKING" => Ok(Self::Chequing),
             "SAVINGS" => Ok(Self::Savings),
             v => Err(eyre!("Unknown account type: \"{v}\"")),
         }
@@ -473,7 +489,7 @@ struct SignOnResponse<'a> {
     server_date: DateTime<FixedOffset>,
     language: Language,
     last_profile_update: Option<DateTime<FixedOffset>>,
-    financial_institution: FinancialInstitution<'a>,
+    financial_institution: Option<FinancialInstitution<'a>>,
     bank_id: u32,
 }
 
@@ -503,7 +519,7 @@ impl<'a> ReadQfx<'a> for SignOnResponse<'a> {
             server_date: server_date.ok()?,
             language: language.ok()?,
             last_profile_update: last_profile_update.option(),
-            financial_institution: financial_institution.ok()?,
+            financial_institution: financial_institution.option(),
             bank_id: bank_id.ok()?,
         })
     }
@@ -535,7 +551,7 @@ impl<'a> ReadQfx<'a> for SignOnMessageResponseV1<'a> {
 #[allow(unused)]
 #[derive(Debug)]
 struct AccountFrom {
-    account_id: u32,
+    account_id: u64,
     bank_id: Option<u32>,
     account_type: Option<AccountType>,
 }
@@ -651,8 +667,8 @@ impl<'a> ReadQfx<'a> for StatementTransaction<'a> {
             }
         }
 
-        let _ = user_date.ok()?;
-        let _ = account_to.ok()?;
+        let _ = user_date;
+        let _ = account_to;
 
         Ok(Self {
             transaction_type: transaction_type.ok()?,
@@ -752,7 +768,7 @@ impl<'a> DocumentParser {
                 ParserState::InStatementTransactionResponse(k1, k2) => {
                     match self.tokens.expect_field(k2)? {
                         Some(Key(b"TRNUID")) => {
-                            self.transaction_id_seen.check::<u32>(&self.tokens)?
+                            self.transaction_id_seen.check::<Value>(&self.tokens)?
                         }
                         Some(Key(b"STATUS")) => self.status_seen.check::<Status>(&self.tokens)?,
                         Some(Key(b"STMTRS")) => {
