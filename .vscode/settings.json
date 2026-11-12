@@ -47,6 +47,7 @@
         "TRNUID",
         "USASCII"
     ],
-    "typescript.tsdk": "node_modules\\typescript\\lib",
-    "typescript.tsserver.experimental.enableProjectDiagnostics": true
+    "rust-analyzer.check.extraArgs": [
+        "--all-features"
+    ]
 }

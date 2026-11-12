@@ -10,14 +10,15 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveDateTime, TimeZone};
 use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail, eyre};
-use indicatif::ProgressBar;
 use rust_decimal::Decimal;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
 use crate::importer::qfx_file::header::StringEncoding;
 use crate::importer::qfx_file::lexer::{Key, Lexer, QfxToken, Value};
-use crate::importer::{Transaction, TransactionImporter, TransactionReader, TransactionType};
+use crate::importer::{
+    ImportProgress, Transaction, TransactionImporter, TransactionReader, TransactionType,
+};
 
 thread_local! {
     pub static LOCAL_TIMEZONE: Cell<FixedOffset> = Cell::new(*Local::now().offset());
@@ -99,12 +100,11 @@ impl TransactionReader for QfxReader {
     async fn load(
         self,
         mut importer: TransactionImporter<'_, '_>,
-        progress: &ProgressBar,
+        progress: &ImportProgress,
     ) -> Result<()> {
         let lexer = Lexer::new(self.contents, self.encoding, self.is_xml);
         let parser = DocumentParser::new(lexer);
 
-        let mut i = 0usize;
         while let Some(transaction) = parser.next_statement_transaction()? {
             let file_transaction_type = match transaction.transaction_type {
                 QfxTransactionType::Debit => TransactionType::Debit,
@@ -128,11 +128,7 @@ impl TransactionReader for QfxReader {
                 })
                 .await?;
 
-            if i.is_multiple_of(100) {
-                progress.inc(100);
-            }
-
-            i += 1;
+            progress.add_transaction();
         }
 
         Ok(())
