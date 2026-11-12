@@ -56,6 +56,8 @@ async fn build_budgets(db: &Db, configs: &[BudgetConfig]) -> Result<()> {
             .await?;
     }
 
+    handle.commit().await?;
+
     Ok(())
 }
 

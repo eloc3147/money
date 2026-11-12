@@ -78,7 +78,7 @@ pub async fn read_sgml_header(src: &mut BufReader<File>) -> Result<Header> {
                     bail!("Repeated header 'SECURITY");
                 }
                 match value {
-                    b"NONE" => security = true,
+                    b"NONE" | b"TYPE1" => security = true,
                     v => bail!("Unrecognized SECURITY value: {:?}", v),
                 }
             }

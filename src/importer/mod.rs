@@ -200,7 +200,7 @@ async fn import_file(config: FileImportConfig<'_>) -> Result<()> {
     };
 
     match &*ext.to_string_lossy() {
-        "qfx" => {
+        "qfx" | "ofx" => {
             QfxReader::open(&config.file_path)
                 .await
                 .wrap_err_with(|| {
