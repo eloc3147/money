@@ -5,6 +5,7 @@ use eframe::egui::{self, Ui};
 use egui_extras::DatePickerButton;
 use strum::VariantArray;
 
+use super::widgets::field;
 use crate::analysis::{DateRange, RangePreset};
 
 /// Convert a chrono date to the date type used by the date picker.
@@ -58,7 +59,8 @@ impl RangeSelector {
         self.preset.resolve(today, bounds, self.custom)
     }
 
-    /// Show the selector. `id` must be unique per selector on screen.
+    /// Show the selector: a captioned preset drop-down, plus date pickers for a custom range.
+    /// `id` must be unique per selector on screen.
     pub fn ui(
         &mut self,
         ui: &mut Ui,
@@ -66,17 +68,19 @@ impl RangeSelector {
         today: NaiveDate,
         bounds: Option<(NaiveDate, NaiveDate)>,
     ) {
-        let label = ui.label("Range:");
         let before = self.preset;
-        egui::ComboBox::from_id_salt((id, "preset"))
-            .selected_text(self.preset.label())
-            .show_ui(ui, |ui| {
-                for &preset in RangePreset::VARIANTS {
-                    ui.selectable_value(&mut self.preset, preset, preset.label());
-                }
-            })
-            .response
-            .labelled_by(label.id);
+        field(ui, "Date range", |ui, label| {
+            egui::ComboBox::from_id_salt((id, "preset"))
+                .selected_text(self.preset.label())
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    for &preset in RangePreset::VARIANTS {
+                        ui.selectable_value(&mut self.preset, preset, preset.label());
+                    }
+                })
+                .response
+                .labelled_by(label);
+        });
         if self.preset == RangePreset::Custom && before != RangePreset::Custom {
             // Start the custom range from whatever was shown before.
             self.custom = before.resolve(today, bounds, self.custom);
@@ -84,16 +88,29 @@ impl RangeSelector {
         if self.preset == RangePreset::Custom {
             let mut start = to_jiff(self.custom.start);
             let mut end = to_jiff(self.custom.end);
-            ui.add(DatePickerButton::new(&mut start).id_salt(&format!("{id}-start")));
-            ui.label("to");
-            ui.add(DatePickerButton::new(&mut end).id_salt(&format!("{id}-end")));
+            field(ui, "From", |ui, _| {
+                ui.add(DatePickerButton::new(&mut start).id_salt(&format!("{id}-start")));
+            });
+            field(ui, "To", |ui, _| {
+                ui.add(DatePickerButton::new(&mut end).id_salt(&format!("{id}-end")));
+            });
             self.custom.start = from_jiff(start);
             self.custom.end = from_jiff(end).max(self.custom.start);
-        } else {
-            let range = self.range(today, bounds);
-            ui.weak(format!("{} – {}", range.start, range.end));
         }
     }
+
+    /// The selected range as text, e.g. `Jul 1, 2024 – Jun 30, 2025`.
+    #[must_use]
+    pub fn describe(&self, today: NaiveDate, bounds: Option<(NaiveDate, NaiveDate)>) -> String {
+        let range = self.range(today, bounds);
+        format!("{} – {}", long_date(range.start), long_date(range.end))
+    }
+}
+
+/// Format a date as `Jun 30, 2025`.
+#[must_use]
+pub fn long_date(date: NaiveDate) -> String {
+    date.format("%b %-d, %Y").to_string()
 }
 
 #[cfg(test)]
@@ -114,5 +131,6 @@ mod tests {
             selector.range(today, None).start,
             NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
         );
+        assert_eq!(selector.describe(today, None), "Jan 1, 2024 – May 10, 2024");
     }
 }

@@ -23,6 +23,7 @@ Grafana" tool into a self-contained native desktop application.
 | 14 | View: uncategorized transactions, with options for adding new rules | ✅ |
 | 15 | No hand-written lists of enum values (variant arrays, name tables); derive them with a macro library | ✅ |
 | 16 | Errors from background work are returned in an easily parsable, colorless format and rendered in the GUI as a readable stack trace | ✅ |
+| 17 | Modern visual design (Wealthsimple as a rough reference) without losing any of the detail shown | ✅ |
 
 ## Design decisions
 
@@ -66,6 +67,29 @@ Grafana" tool into a self-contained native desktop application.
   are enabled crate-wide, so CI (clippy with `-D warnings`) fails on any undocumented item.
 - **Code coverage:** `cargo llvm-cov` in CI with a minimum line-coverage threshold.
 
+### Visual design (requirement 17)
+
+- Theme tokens live in `gui/theme.rs` (`Palette` for light and dark, egui `Style` per theme);
+  views take colors from `Palette::of(ui)` instead of hard coding them. Warm off-white /
+  near-black canvas, white / charcoal cards with hairline borders, near-black ink, and pill
+  controls with a filled primary action.
+- Typeface: Inter 4.1 (Regular, Medium, SemiBold), vendored in `assets/fonts` under the SIL
+  OFL and embedded with `include_bytes!`. egui's fonts stay in the fallback chain for symbols.
+  Fonts apply from the frame after `set_fonts`, so the app draws nothing on its first frame.
+- Components in `gui/widgets.rs`: cards, page header, segmented control, primary/secondary
+  buttons, stat cards (caption, large value, detail line), chips, badges, avatars, share bars
+  and sidebar navigation items. Chips and badges are painted at their content size so table
+  cells cannot stretch them.
+- Layout: left sidebar (navigation with an uncategorized count badge, status, reload, theme
+  switch, config path) replaces the top tab bar and bottom status bar. Each view has a page
+  title with a summary subtitle, a captioned filter toolbar, stat cards and its content in
+  cards.
+- Detail kept: every column, filter, sort and control from before is still present. Memos
+  now sit beside the name instead of in their own column; the chart legend moved above the
+  plot so it can no longer cover bars; x-axis labels are spaced by width so they never overlap.
+- The categorical chart palette is unchanged (it was already validated for colour-vision
+  deficiency). Amounts show an explicit sign; income is green, expenses use the normal ink.
+
 ## Progress log
 
 - 2026-11-11 — Surveyed existing code; chose egui/eframe + sqlx/sqlite; wrote this plan.
@@ -88,9 +112,14 @@ Grafana" tool into a self-contained native desktop application.
   tests live in `tests/error_report.rs` (their own process, so the hook is installed before
   any report is created).
 
+- 2026-11-15 — Requirement 17: redesign in a Wealthsimple-like style (Inter, cards, sidebar,
+  segmented controls, stat cards, cleaner tables and chart). GUI tests now find navigation
+  buttons by role, since page titles share their names, and snapshot renders are written in
+  both light and dark mode.
+
 ## Testing notes
 
-- `cargo test --all-targets` runs 65 unit tests, 2 error-report tests and 8 GUI tests (no
+- `cargo test --all-targets` runs 69 unit tests, 2 error-report tests and 8 GUI tests (no
   display needed). Resolving backtraces makes the error-report tests take ~15 s in debug
   builds.
 - The real window was launched on Linux (Wayland, VMware SVGA VM) with mock data and captured
