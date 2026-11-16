@@ -2,6 +2,8 @@
 
 use eframe::egui::{self, Color32, RichText, Ui};
 
+use super::theme::{Palette, medium, semibold};
+use super::widgets::{GAP, caption, card, card_frame, secondary_button};
 use crate::error::{ErrorReport, Frame, SourceLocation};
 
 /// State of the error display.
@@ -39,16 +41,17 @@ impl ErrorView {
     /// Draw `report`.
     pub fn ui(&mut self, ui: &mut Ui, report: &ErrorReport) {
         let error_color = ui.visuals().error_fg_color;
-        egui::Frame::group(ui.style())
-            .stroke(egui::Stroke::new(1.0, error_color))
-            .inner_margin(10.0)
+        card_frame(ui)
+            .stroke(egui::Stroke::new(1.0, error_color.gamma_multiply(0.6)))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.label(
-                    RichText::new(&report.message)
-                        .size(16.0)
-                        .strong()
-                        .color(error_color),
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(&report.message)
+                            .font(semibold(18.0))
+                            .color(error_color),
+                    )
+                    .wrap(),
                 );
                 if let Some(location) = &report.location {
                     ui.label(
@@ -59,11 +62,11 @@ impl ErrorView {
                     .on_hover_text(location.to_string());
                 }
                 if !report.causes.is_empty() {
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("Caused by").strong());
+                    ui.add_space(8.0);
+                    ui.label(caption(ui, "Caused by"));
                     egui::Grid::new("error-causes")
                         .num_columns(2)
-                        .spacing([8.0, 4.0])
+                        .spacing([10.0, 6.0])
                         .show(ui, |ui| {
                             for (idx, cause) in report.causes.iter().enumerate() {
                                 ui.label(RichText::new(format!("{idx}.")).monospace().weak());
@@ -72,9 +75,8 @@ impl ErrorView {
                             }
                         });
                 }
-                ui.add_space(6.0);
-                if ui
-                    .button("Copy report")
+                ui.add_space(12.0);
+                if secondary_button(ui, true, "Copy report")
                     .on_hover_text("Copy as plain text")
                     .clicked()
                 {
@@ -82,13 +84,17 @@ impl ErrorView {
                 }
             });
 
-        ui.add_space(8.0);
+        ui.add_space(GAP);
         let app_count = report.app_frames().count();
         if report.frames.is_empty() {
             ui.weak("No stack trace was captured for this error.");
             return;
         }
-        egui::CollapsingHeader::new(format!("Stack trace ({app_count} application frames)"))
+        card(ui, |ui| {
+            egui::CollapsingHeader::new(
+                RichText::new(format!("Stack trace ({app_count} application frames)"))
+                    .font(semibold(15.0)),
+            )
             .id_salt("error-stack")
             .default_open(true)
             .show(ui, |ui| {
@@ -107,6 +113,7 @@ impl ErrorView {
                     .collect();
                 frame_table(ui, &frames);
             });
+        });
     }
 }
 
@@ -118,13 +125,18 @@ fn frame_table(ui: &mut Ui, frames: &[(usize, &Frame)]) {
     } else {
         Color32::from_rgb(0x1c, 0x5c, 0xab)
     };
+    let faint = Palette::of(ui).faint;
     egui::Grid::new("error-frames")
         .num_columns(2)
         .striped(true)
-        .spacing([12.0, 4.0])
+        .spacing([12.0, 6.0])
         .show(ui, |ui| {
             for (idx, frame) in frames {
-                ui.label(RichText::new(idx.to_string()).monospace().weak());
+                ui.label(
+                    RichText::new(idx.to_string())
+                        .font(medium(12.0))
+                        .color(faint),
+                );
                 ui.vertical(|ui| {
                     // Generic names can be very long: truncate, full name on hover.
                     let name = RichText::new(&frame.function).monospace();

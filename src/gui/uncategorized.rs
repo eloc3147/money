@@ -5,7 +5,13 @@ use egui_extras::{Column, TableBuilder};
 use strum::VariantArray;
 
 use super::Action;
-use super::style::{amount_label, money};
+use super::range::long_date;
+use super::style::money;
+use super::theme::{Palette, medium};
+use super::widgets::{
+    amount_label, badge, caption, card, card_fill, field, muted, page_header, primary_button,
+    section_title,
+};
 use crate::analysis::{UncategorizedGroup, group_uncategorized};
 use crate::config::{
     AppConfig, IncomeType, NameSource, TransactionTypeConfig, TransactionTypeMode,
@@ -181,87 +187,122 @@ impl UncategorizedView {
         let groups = self.groups(data);
         let mut action = None;
 
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(format!(
-                    "{} uncategorized transactions in {} groups",
-                    data.uncategorized.len(),
-                    group_uncategorized(&data.uncategorized).len()
-                ))
-                .strong(),
+        let subtitle = format!(
+            "{} transactions in {} groups need a rule",
+            data.uncategorized.len(),
+            group_uncategorized(&data.uncategorized).len()
+        );
+        page_header(ui, "Uncategorized", Some(&subtitle), |ui| {
+            // Right to left: the field first, then its caption to its left.
+            let search = ui.add(
+                egui::TextEdit::singleline(&mut self.search)
+                    .hint_text("Name or account…")
+                    .desired_width(220.0)
+                    .margin(egui::vec2(10.0, 8.0)),
             );
-            ui.separator();
-            let label = ui.label("Search:");
-            ui.text_edit_singleline(&mut self.search)
-                .labelled_by(label.id);
+            let label = ui.label(caption(ui, "Search"));
+            search.labelled_by(label.id);
         });
-        ui.add_space(4.0);
 
         if data.uncategorized.is_empty() {
-            ui.centered_and_justified(|ui| ui.label("🎉 Every transaction is categorized."));
+            card(ui, |ui| {
+                section_title(ui, "All caught up");
+                ui.label(muted(ui, "Every transaction is categorized."));
+            });
             return None;
         }
 
         egui::Panel::right("uncategorized-form")
-            .resizable(true)
-            .default_size(340.0)
+            .resizable(false)
+            .exact_size(380.0)
+            .show_separator_line(false)
+            .frame(egui::Frame::new().inner_margin(egui::Margin {
+                left: 16,
+                ..Default::default()
+            }))
             .show(ui, |ui| {
-                action = self.form_ui(ui, config);
+                card(ui, |ui| action = self.form_ui(ui, config));
             });
 
-        egui::CentralPanel::no_frame().show(ui, |ui| self.table(ui, &groups));
+        egui::CentralPanel::no_frame().show(ui, |ui| {
+            card_fill(ui, |ui| self.table(ui, &groups));
+        });
         action
     }
 
     /// Draw the groups table.
     fn table(&mut self, ui: &mut Ui, groups: &[UncategorizedGroup]) {
-        let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
+        let p = Palette::of(ui);
         // Selectable labels would swallow clicks meant for selecting the row.
         ui.style_mut().interaction.selectable_labels = false;
+        let right = egui::Layout::right_to_left(egui::Align::Center);
         TableBuilder::new(ui)
             .id_salt("uncategorized-table")
             .striped(true)
+            .auto_shrink(false)
             .sense(egui::Sense::click())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::exact(50.0))
-            .column(Column::initial(100.0))
-            .column(Column::initial(220.0))
-            .column(Column::initial(240.0).clip(true))
-            .column(Column::initial(110.0))
-            .column(Column::remainder())
-            .header(row_height, |mut header| {
-                for name in ["Count", "Account", "Reason", "Name", "Total", "Dates"] {
-                    header.col(|ui| {
-                        ui.strong(name);
-                    });
-                }
+            .column(Column::initial(180.0).at_least(120.0).clip(true))
+            .column(Column::exact(48.0))
+            .column(Column::exact(100.0))
+            .column(Column::remainder().at_least(120.0).clip(true))
+            .header(30.0, |mut header| {
+                header.col(|ui| {
+                    ui.label(caption(ui, "Name"));
+                });
+                header.col(|ui| {
+                    ui.label(caption(ui, "Count"));
+                });
+                header.col(|ui| {
+                    ui.with_layout(right, |ui| ui.label(caption(ui, "Total")));
+                });
+                header.col(|ui| {
+                    ui.add_space(16.0);
+                    ui.label(caption(ui, "Dates"));
+                });
             })
             .body(|body| {
-                body.rows(row_height, groups.len(), |mut row| {
+                body.rows(52.0, groups.len(), |mut row| {
                     let group = &groups[row.index()];
                     let selected = self.selected.as_ref().is_some_and(|(k, a, m)| {
                         *k == group.kind && *a == group.account && *m == group.message
                     });
                     row.set_selected(selected);
                     row.col(|ui| {
-                        ui.label(group.count.to_string());
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.add_space(7.0);
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&group.message)
+                                        .font(medium(14.0))
+                                        .color(p.text),
+                                )
+                                .truncate(),
+                            );
+                            ui.add(
+                                egui::Label::new(muted(
+                                    ui,
+                                    format!("{} · {}", group.account, group.kind.label()),
+                                ))
+                                .truncate(),
+                            );
+                        });
                     });
                     row.col(|ui| {
-                        ui.label(&group.account);
+                        badge(ui, group.count, false);
                     });
                     row.col(|ui| {
-                        ui.label(group.kind.label());
+                        ui.with_layout(right, |ui| amount_label(ui, group.total));
                     });
                     row.col(|ui| {
-                        ui.label(&group.message);
-                    });
-                    row.col(|ui| amount_label(ui, group.total));
-                    row.col(|ui| {
-                        if group.first == group.last {
-                            ui.label(group.first.to_string());
+                        ui.add_space(16.0);
+                        let text = if group.first == group.last {
+                            long_date(group.first)
                         } else {
-                            ui.label(format!("{} – {}", group.first, group.last));
-                        }
+                            format!("{} – {}", long_date(group.first), long_date(group.last))
+                        };
+                        ui.label(muted(ui, text));
                     });
                     if row.response().clicked() {
                         self.select(group);
@@ -273,72 +314,90 @@ impl UncategorizedView {
     /// Draw the form for the selected group.
     fn form_ui(&mut self, ui: &mut Ui, config: &AppConfig) -> Option<Action> {
         let Some(form) = &mut self.form else {
-            ui.add_space(8.0);
-            ui.weak("Select a row to add a rule for it.");
+            section_title(ui, "Add a rule");
+            ui.add(
+                egui::Label::new(muted(
+                    ui,
+                    "Select a row to categorize every transaction with that name.",
+                ))
+                .wrap(),
+            );
             return None;
         };
         let categories = config.categories();
+        let full = ui.available_width();
         let submit = match form {
             Form::Rule(rule) => {
-                ui.heading("Add rule");
-                ui.weak(
-                    "Transactions of this type whose name matches the pattern exactly are \
-                     assigned the category.",
+                section_title(ui, "Add rule");
+                ui.add(
+                    egui::Label::new(muted(
+                        ui,
+                        "Transactions of this type whose name matches the pattern exactly are \
+                         assigned the category.",
+                    ))
+                    .wrap(),
                 );
-                ui.add_space(6.0);
-                egui::Grid::new("rule-form")
-                    .num_columns(2)
-                    .spacing([8.0, 6.0])
-                    .show(ui, |ui| {
-                        ui.label("Type");
-                        ui.label(rule.transaction_type.name());
-                        ui.end_row();
-                        let label = ui.label("Pattern");
-                        ui.text_edit_singleline(&mut rule.pattern)
-                            .labelled_by(label.id);
-                        ui.end_row();
-                        let label = ui.label("Category");
-                        ui.horizontal(|ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(&mut rule.category)
-                                    .hint_text("e.g. Food.Groceries")
-                                    .desired_width(150.0),
-                            )
-                            .labelled_by(label.id);
-                            egui::ComboBox::from_id_salt("rule-category-pick")
-                                .selected_text("existing…")
-                                .width(90.0)
-                                .show_ui(ui, |ui| {
-                                    for category in &categories {
-                                        if ui
-                                            .selectable_label(*category == rule.category, category)
-                                            .clicked()
-                                        {
-                                            rule.category.clone_from(category);
-                                        }
+                ui.add_space(8.0);
+                ui.spacing_mut().item_spacing.y = 12.0;
+                field(ui, "Type", |ui, _| {
+                    ui.label(
+                        RichText::new(rule.transaction_type.name())
+                            .font(medium(14.0))
+                            .color(Palette::of(ui).text),
+                    );
+                });
+                field(ui, "Pattern", |ui, label| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut rule.pattern)
+                            .desired_width(full)
+                            .margin(egui::vec2(10.0, 8.0)),
+                    )
+                    .labelled_by(label);
+                });
+                field(ui, "Category", |ui, label| {
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut rule.category)
+                                .hint_text("e.g. Food.Groceries")
+                                .desired_width(full - 130.0)
+                                .margin(egui::vec2(10.0, 8.0)),
+                        )
+                        .labelled_by(label);
+                        egui::ComboBox::from_id_salt("rule-category-pick")
+                            .selected_text("Existing…")
+                            .width(110.0)
+                            .show_ui(ui, |ui| {
+                                for category in &categories {
+                                    if ui
+                                        .selectable_label(*category == rule.category, category)
+                                        .clicked()
+                                    {
+                                        rule.category.clone_from(category);
                                     }
-                                })
-                                .response
-                                .labelled_by(label.id);
-                        });
-                        ui.end_row();
-                        ui.label("Ignore");
-                        ui.checkbox(&mut rule.ignore, "Drop matching transactions");
-                        ui.end_row();
+                                }
+                            })
+                            .response
+                            .labelled_by(label);
                     });
-                ui.add_space(6.0);
-                ui.button("Add rule and reload").clicked()
+                });
+                ui.checkbox(&mut rule.ignore, "Ignore matching transactions");
+                ui.add_space(4.0);
+                primary_button(ui, true, "Add rule and reload").clicked()
             }
             Form::Mapping(form) => {
-                ui.heading("Add transaction type");
-                ui.weak(
-                    "No transaction type matches these transactions. A type decides how the \
-                     name is read and whether it is income.",
+                section_title(ui, "Add transaction type");
+                ui.add(
+                    egui::Label::new(muted(
+                        ui,
+                        "No transaction type matches these transactions. A type decides how \
+                         the name is read and whether it is income.",
+                    ))
+                    .wrap(),
                 );
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 mapping_grid(ui, "mapping-form", &mut form.mapping);
-                ui.add_space(6.0);
-                ui.button("Add type and reload").clicked()
+                ui.add_space(12.0);
+                primary_button(ui, true, "Add type and reload").clicked()
             }
         };
         if let Some(error) = &self.error {
@@ -358,9 +417,9 @@ impl UncategorizedView {
 pub fn mapping_grid(ui: &mut Ui, id: &str, mapping: &mut TransactionTypeConfig) {
     egui::Grid::new(id)
         .num_columns(2)
-        .spacing([8.0, 6.0])
+        .spacing([16.0, 10.0])
         .show(ui, |ui| {
-            let label = ui.label("Mode");
+            let label = ui.label(caption(ui, "Mode"));
             enum_combo(
                 ui,
                 label.id,
@@ -371,12 +430,12 @@ pub fn mapping_grid(ui: &mut Ui, id: &str, mapping: &mut TransactionTypeConfig) 
             ui.end_row();
             match mapping.mode {
                 TransactionTypeMode::Prefix => {
-                    let label = ui.label("Prefix");
+                    let label = ui.label(caption(ui, "Prefix"));
                     let prefix = mapping.prefix.get_or_insert_with(String::new);
                     ui.text_edit_singleline(prefix).labelled_by(label.id);
                 }
                 TransactionTypeMode::SourceType => {
-                    let label = ui.label("Source type");
+                    let label = ui.label(caption(ui, "Source type"));
                     let source = mapping.source_type.get_or_insert(TransactionType::Debit);
                     enum_combo(
                         ui,
@@ -388,7 +447,7 @@ pub fn mapping_grid(ui: &mut Ui, id: &str, mapping: &mut TransactionTypeConfig) 
                 }
             }
             ui.end_row();
-            let label = ui.label("Type");
+            let label = ui.label(caption(ui, "Type"));
             enum_combo(
                 ui,
                 label.id,
@@ -397,7 +456,7 @@ pub fn mapping_grid(ui: &mut Ui, id: &str, mapping: &mut TransactionTypeConfig) 
                 UserTransactionType::VARIANTS,
             );
             ui.end_row();
-            let label = ui.label("Income");
+            let label = ui.label(caption(ui, "Income"));
             enum_combo(
                 ui,
                 label.id,
@@ -406,7 +465,7 @@ pub fn mapping_grid(ui: &mut Ui, id: &str, mapping: &mut TransactionTypeConfig) 
                 IncomeType::VARIANTS,
             );
             ui.end_row();
-            let label = ui.label("Name source");
+            let label = ui.label(caption(ui, "Name source"));
             enum_combo(
                 ui,
                 label.id,
@@ -415,7 +474,7 @@ pub fn mapping_grid(ui: &mut Ui, id: &str, mapping: &mut TransactionTypeConfig) 
                 NameSource::VARIANTS,
             );
             ui.end_row();
-            ui.label("Accounts");
+            ui.label(caption(ui, "Accounts"));
             ui.label(mapping.accounts.join(", "));
             ui.end_row();
         });

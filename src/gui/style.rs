@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use eframe::egui::{Color32, RichText, Ui};
+use eframe::egui::Color32;
 use rust_decimal::Decimal;
 
 /// Categorical series colors for light mode, in fixed order (validated for colour-vision
@@ -103,32 +103,12 @@ pub fn money_f64(amount: f64) -> String {
     money(Decimal::try_from(amount).unwrap_or_default())
 }
 
-/// A colored amount label: green for positive, red for negative.
-pub fn amount_label(ui: &mut Ui, amount: Decimal) {
-    let dark = ui.visuals().dark_mode;
-    let color = if amount.is_sign_negative() {
-        if dark {
-            Color32::from_rgb(0xe6, 0x67, 0x67)
-        } else {
-            Color32::from_rgb(0xb4, 0x23, 0x18)
-        }
-    } else if dark {
-        Color32::from_rgb(0x4c, 0xc3, 0x8a)
-    } else {
-        Color32::from_rgb(0x00, 0x7a, 0x3d)
-    };
-    ui.label(RichText::new(money(amount)).color(color).monospace());
-}
-
-/// A summary tile with a small caption above a large value.
-pub fn stat_tile(ui: &mut Ui, caption: &str, value: &str) {
-    eframe::egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.set_min_width(140.0);
-        ui.vertical(|ui| {
-            ui.label(RichText::new(caption).small().weak());
-            ui.label(RichText::new(value).size(20.0).strong());
-        });
-    });
+/// Format an `f64` amount as whole dollars, e.g. `$4,000` (for axis labels).
+#[must_use]
+pub fn money_whole(amount: f64) -> String {
+    let text = money(Decimal::try_from(amount.round()).unwrap_or_default());
+    text.strip_suffix(".00")
+        .map_or(text.clone(), str::to_string)
 }
 
 #[cfg(test)]
@@ -143,6 +123,8 @@ mod tests {
         assert_eq!(money(Decimal::new(-1, 3)), "$0.00");
         assert_eq!(money(Decimal::new(99_999, 2)), "$999.99");
         assert_eq!(money_f64(12.5), "$12.50");
+        assert_eq!(money_whole(4000.4), "$4,000");
+        assert_eq!(money_whole(-1234.6), "-$1,235");
     }
 
     #[test]

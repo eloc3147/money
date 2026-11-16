@@ -55,11 +55,25 @@ fn maybe_render(harness: &mut Harness<'_, MoneyApp>, name: &str) {
         let _guard = RENDER_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let image = harness.render().expect("render");
-        image
-            .save(Path::new(&dir).join(format!("{name}.png")))
-            .unwrap();
+        for (theme, suffix) in [
+            (eframe::egui::ThemePreference::Light, "light"),
+            (eframe::egui::ThemePreference::Dark, "dark"),
+        ] {
+            harness.ctx.set_theme(theme);
+            harness.run_ok();
+            let image = harness.render().expect("render");
+            image
+                .save(Path::new(&dir).join(format!("{name}-{suffix}.png")))
+                .unwrap();
+        }
     }
+}
+
+/// Click the button named `label` (page titles can share a navigation item's name).
+fn click_button(harness: &Harness<'_, MoneyApp>, label: &str) {
+    harness
+        .get_by_role_and_label(eframe::egui::accesskit::Role::Button, label)
+        .click();
 }
 
 #[test]
@@ -95,13 +109,13 @@ fn wait_for_load(harness: &mut Harness<'_, MoneyApp>) {
 fn tabs_switch_by_clicking() {
     let dir = tempfile::tempdir().unwrap();
     let mut harness = harness(mock_app(dir.path()));
-    harness.get_by_label("Spending by category").click();
+    click_button(&harness, "Spending by category");
     harness.run_ok();
     assert_eq!(harness.state().tab, Tab::Chart);
-    harness.get_by_label("Settings").click();
+    click_button(&harness, "Settings");
     harness.run_ok();
     assert_eq!(harness.state().tab, Tab::Settings);
-    harness.get_by_label_contains("Uncategorized (").click();
+    click_button(&harness, "Uncategorized");
     harness.run_ok();
     assert_eq!(harness.state().tab, Tab::Uncategorized);
 }
@@ -155,9 +169,7 @@ fn chart_controls_change_grouping() {
             .unwrap()
             .click();
     };
-    combo(&harness, "Group by:");
-    harness.run_ok();
-    harness.get_by_label("Quarter").click();
+    click_button(&harness, "Quarter");
     harness.run_ok();
     assert_eq!(
         harness.state().chart.period,
@@ -168,7 +180,7 @@ fn chart_controls_change_grouping() {
         "breakdown uses quarters"
     );
 
-    combo(&harness, "Averaging:");
+    combo(&harness, "Averaging");
     harness.run_ok();
     harness.get_by_label("Moving average").click();
     harness.run_ok();
@@ -249,18 +261,18 @@ fn settings_edit_and_save() {
             &format!("settings-{}", section.to_lowercase().replace(' ', "-")),
         );
     }
-    harness.get_by_label("➕ Add account").click();
+    click_button(&harness, "Add account");
     harness.run_ok();
     assert!(harness.state().settings.is_dirty());
-    harness.get_by_label("↺ Revert").click();
+    click_button(&harness, "Revert");
     harness.run_ok();
     assert!(!harness.state().settings.is_dirty());
 
     harness.get_by_label("Budgets").click();
     harness.run_ok();
-    harness.get_by_label("➕ Add budget").click();
+    click_button(&harness, "Add budget");
     harness.run_ok();
-    harness.get_by_label("💾 Save and reload").click();
+    click_button(&harness, "Save and reload");
     harness.run_ok();
     wait_for_load(&mut harness);
     let saved = money::config::AppConfig::load(&dir.path().join("config.toml")).unwrap();
@@ -279,7 +291,7 @@ fn missing_config_opens_settings() {
     let app = MoneyApp::new(options, None, today());
     let mut harness = harness(app);
     assert_eq!(harness.state().tab, Tab::Settings);
-    harness.get_by_label("Transactions").click();
+    click_button(&harness, "Transactions");
     harness.run_ok();
     assert!(
         harness
@@ -334,7 +346,7 @@ fn import_errors_are_shown() {
     maybe_render(&mut harness, "load-error");
     // The config is still editable after a failed import.
     assert_eq!(harness.state().config().account.len(), 1);
-    harness.get_by_label("⚙ Open settings").click();
+    click_button(&harness, "Open settings");
     harness.run_ok();
     assert_eq!(harness.state().tab, Tab::Settings);
 }

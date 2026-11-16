@@ -26,6 +26,10 @@ Other options: `--summary` imports and prints a summary without opening a window
 
 Building on Linux needs the usual windowing libraries (`libxkbcommon`, Wayland and/or X11).
 
+The UI uses the [Inter](https://rsms.me/inter/) typeface, bundled in `assets/fonts` under the
+SIL Open Font License (see `assets/fonts/Inter-LICENSE.txt`). Light, dark or system theme can
+be picked at the bottom of the sidebar.
+
 ## Config format
 
 ```toml
@@ -75,3 +79,5 @@ cargo llvm-cov --all-targets  --all-features --summary-only # coverage (CI requi
 
 Set `MONEY_SNAPSHOT_DIR=<dir>` when running `cargo test --test gui` to save PNG renderings of
 each view (requires a Vulkan/Metal/DX12/GL adapter; a software one such as lavapipe works).
+each view in light and dark mode (requires a Vulkan/Metal/DX12/GL adapter; a software one
+such as lavapipe works).

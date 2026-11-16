@@ -3,14 +3,20 @@
 use std::cmp::Ordering;
 
 use chrono::NaiveDate;
-use eframe::egui::{self, RichText, Ui};
+use eframe::egui::{self, Color32, RichText, Ui};
 use egui_extras::{Column, TableBuilder};
 use rust_decimal::Decimal;
 use strum::{IntoStaticStr, VariantArray};
 
-use super::range::RangeSelector;
-use super::style::{amount_label, money, stat_tile};
-use crate::analysis::{RangePreset, totals};
+use super::chart::category_colors;
+use super::range::{RangeSelector, long_date};
+use super::style::{CategoryColors, money};
+use super::theme::{Palette, medium};
+use super::widgets::{
+    GAP, Stat, amount_label, avatar, caption, card_fill, chip, field, muted, page_header,
+    segmented, stat_row,
+};
+use crate::analysis::{CategoryLevel, RangePreset, totals};
 use crate::model::{Dataset, TransactionRecord};
 
 /// Which side of the ledger is listed.
@@ -153,24 +159,13 @@ impl TransactionsView {
         rows
     }
 
-    /// Draw the filter bar.
+    /// Draw the filter toolbar.
     fn filter_bar(&mut self, ui: &mut Ui, data: &Dataset, today: NaiveDate) {
         ui.horizontal_wrapped(|ui| {
-            for &side in Side::VARIANTS {
-                let label: &'static str = side.into();
-                if ui
-                    .selectable_label(self.filter.side == side, RichText::new(label).strong())
-                    .clicked()
-                {
-                    self.filter.side = side;
-                    self.filter.category = None;
-                }
-            }
-            ui.separator();
+            ui.spacing_mut().item_spacing.x = 12.0;
             self.filter
                 .range
                 .ui(ui, "transactions-range", today, data.date_bounds());
-            ui.separator();
 
             let income = self.filter.side.is_income();
             let mut categories: Vec<&str> = data
@@ -204,27 +199,50 @@ impl TransactionsView {
                 &accounts,
             );
 
-            ui.separator();
-            let label = ui.label("Search:");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.filter.search)
-                    .hint_text("name, memo, category…")
-                    .desired_width(180.0),
-            )
-            .labelled_by(label.id);
-            if !self.filter.search.is_empty() && ui.small_button("Clear").clicked() {
-                self.filter.search.clear();
-            }
+            field(ui, "Search", |ui, label| {
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.filter.search)
+                            .hint_text("Name, memo, category…")
+                            .desired_width(220.0)
+                            .margin(egui::vec2(10.0, 8.0)),
+                    )
+                    .labelled_by(label);
+                    if !self.filter.search.is_empty()
+                        && ui
+                            .add(egui::Button::new(caption(ui, "Clear")).frame(false))
+                            .clicked()
+                    {
+                        self.filter.search.clear();
+                    }
+                });
+            });
         });
+        ui.add_space(GAP);
     }
 
     /// Draw the view.
     pub fn ui(&mut self, ui: &mut Ui, data: &Dataset, today: NaiveDate) {
-        self.filter_bar(ui, data, today);
-        ui.add_space(4.0);
-
         let rows = self.rows(data, today);
         let summary = totals(rows.iter().map(|&i| &data.transactions[i]));
+        let side: &'static str = self.filter.side.into();
+        let subtitle = format!(
+            "{} {} · {}",
+            summary.count,
+            side.to_lowercase(),
+            self.filter.range.describe(today, data.date_bounds())
+        );
+        let mut side = self.filter.side;
+        page_header(ui, "Transactions", Some(&subtitle), |ui| {
+            let options: Vec<(Side, &str)> =
+                Side::VARIANTS.iter().map(|&s| (s, s.into())).collect();
+            if segmented(ui, &mut side, &options) {
+                self.filter.category = None;
+            }
+        });
+        self.filter.side = side;
+        self.filter_bar(ui, data, today);
+
         let range = self.filter.range.range(today, data.date_bounds());
         // Same definition as the chart: the number of calendar months the range touches.
         #[allow(clippy::cast_precision_loss)]
@@ -235,30 +253,28 @@ impl TransactionsView {
         } else {
             summary.expenses
         };
-        ui.horizontal_wrapped(|ui| {
-            stat_tile(ui, "Transactions", &summary.count.to_string());
-            stat_tile(ui, "Total", &money(total));
-            stat_tile(
-                ui,
+        let mut stats = vec![
+            Stat::new("Transactions", summary.count.to_string()),
+            Stat::new("Total", money(total)),
+            Stat::new(
                 "Monthly average",
-                &money(
+                money(
                     Decimal::try_from(crate::analysis::to_f64(total) / months).unwrap_or_default(),
                 ),
-            );
-            let largest = rows
-                .iter()
-                .map(|&i| &data.transactions[i])
-                .max_by_key(|t| if t.income { t.amount } else { -t.amount });
-            if let Some(t) = largest {
-                stat_tile(
-                    ui,
-                    "Largest",
-                    &format!("{} · {}", money(t.amount.abs()), t.name),
-                );
-            }
-        });
-        ui.add_space(4.0);
-        self.table(ui, data, &rows);
+            )
+            .detail(format!("over {months} months")),
+        ];
+        let largest = rows
+            .iter()
+            .map(|&i| &data.transactions[i])
+            .max_by_key(|t| if t.income { t.amount } else { -t.amount });
+        if let Some(t) = largest {
+            stats.push(Stat::new("Largest", money(t.amount.abs())).detail(&t.name));
+        }
+        stat_row(ui, &stats);
+
+        let colors = category_colors(data, self.filter.side.is_income(), CategoryLevel::Base);
+        card_fill(ui, |ui| self.table(ui, data, &rows, &colors));
     }
 
     /// A sortable column header.
@@ -266,11 +282,21 @@ impl TransactionsView {
         let name: &'static str = column.into();
         let arrow = match (self.sort == column, self.ascending) {
             (false, _) => "",
-            (true, true) => " ⏶",
-            (true, false) => " ⏷",
+            (true, true) => " ↑",
+            (true, false) => " ↓",
         };
+        let p = Palette::of(ui);
+        let color = if self.sort == column { p.text } else { p.muted };
         if ui
-            .add(egui::Button::new(RichText::new(format!("{name}{arrow}")).strong()).frame(false))
+            .add(
+                egui::Button::new(
+                    RichText::new(format!("{name}{arrow}"))
+                        .font(medium(12.0))
+                        .color(color),
+                )
+                .frame(false),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
             if self.sort == column {
@@ -286,51 +312,57 @@ impl TransactionsView {
     }
 
     /// Draw the table of `rows`.
-    fn table(&mut self, ui: &mut Ui, data: &Dataset, rows: &[usize]) {
+    fn table(&mut self, ui: &mut Ui, data: &Dataset, rows: &[usize], colors: &CategoryColors) {
         if rows.is_empty() {
-            ui.centered_and_justified(|ui| ui.weak("No transactions match the current filters."));
+            ui.centered_and_justified(|ui| {
+                ui.label(muted(ui, "No transactions match the current filters."));
+            });
             return;
         }
-        let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
+        let dark = ui.visuals().dark_mode;
+        let faint = Palette::of(ui).faint;
+        ui.spacing_mut().item_spacing.y = 0.0;
         TableBuilder::new(ui)
             .id_salt("transactions-table")
             .striped(true)
-            .resizable(true)
+            .resizable(false)
+            .auto_shrink(false)
+            .sense(egui::Sense::hover())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::exact(90.0))
-            .column(Column::initial(110.0).at_least(60.0))
-            .column(Column::initial(170.0).at_least(80.0))
-            .column(Column::initial(260.0).at_least(80.0))
-            .column(Column::initial(200.0).at_least(60.0).clip(true))
-            .column(Column::remainder().at_least(100.0))
-            .header(row_height + 4.0, |mut header| {
+            .column(Column::exact(110.0))
+            .column(Column::remainder().at_least(220.0).clip(true))
+            .column(Column::initial(200.0).at_least(120.0).clip(true))
+            .column(Column::initial(110.0).at_least(80.0))
+            .column(Column::exact(130.0))
+            .header(30.0, |mut header| {
                 header.col(|ui| self.header(ui, SortColumn::Date));
-                header.col(|ui| self.header(ui, SortColumn::Account));
-                header.col(|ui| self.header(ui, SortColumn::Category));
                 header.col(|ui| self.header(ui, SortColumn::Name));
+                header.col(|ui| self.header(ui, SortColumn::Category));
+                header.col(|ui| self.header(ui, SortColumn::Account));
                 header.col(|ui| {
-                    ui.strong("Memo");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.header(ui, SortColumn::Amount);
+                    });
                 });
-                header.col(|ui| self.header(ui, SortColumn::Amount));
             })
             .body(|body| {
-                body.rows(row_height, rows.len(), |mut row| {
+                body.rows(ROW_HEIGHT, rows.len(), |mut row| {
                     let t = &data.transactions[rows[row.index()]];
+                    let color = if colors.has_slot(&t.base_category) {
+                        colors.color(&t.base_category, dark)
+                    } else {
+                        faint
+                    };
                     row.col(|ui| {
-                        ui.label(t.posted_date.to_string());
+                        ui.label(muted(ui, long_date(t.posted_date)));
                     });
+                    row.col(|ui| description(ui, t, color));
                     row.col(|ui| {
-                        ui.label(&t.account);
-                    });
-                    row.col(|ui| {
-                        ui.label(&t.category)
+                        chip(ui, &t.category, Some(color))
                             .on_hover_text(format!("Type: {}", t.transaction_type));
                     });
                     row.col(|ui| {
-                        ui.label(&t.name);
-                    });
-                    row.col(|ui| {
-                        ui.weak(t.memo.as_deref().unwrap_or(""));
+                        ui.label(muted(ui, &t.account));
                     });
                     row.col(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -342,7 +374,27 @@ impl TransactionsView {
     }
 }
 
-/// A combo box choosing one of `options` or "All".
+/// Height of a transaction row.
+const ROW_HEIGHT: f32 = 44.0;
+
+/// The description cell: an avatar tinted by category, the name, and the memo beside it.
+fn description(ui: &mut Ui, t: &TransactionRecord, color: Color32) {
+    avatar(ui, &t.name, color, 26.0);
+    ui.add_space(4.0);
+    ui.add(
+        egui::Label::new(
+            RichText::new(&t.name)
+                .font(medium(14.0))
+                .color(Palette::of(ui).text),
+        )
+        .truncate(),
+    );
+    if let Some(memo) = &t.memo {
+        ui.add(egui::Label::new(muted(ui, memo)).truncate());
+    }
+}
+
+/// A captioned combo box choosing one of `options` or "All".
 pub fn option_combo(
     ui: &mut Ui,
     label: &str,
@@ -350,17 +402,19 @@ pub fn option_combo(
     value: &mut Option<String>,
     options: &[&str],
 ) {
-    let label = ui.label(format!("{label}:"));
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(value.as_deref().unwrap_or("All"))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(value, None, "All");
-            for &option in options {
-                ui.selectable_value(value, Some(option.to_string()), option);
-            }
-        })
-        .response
-        .labelled_by(label.id);
+    field(ui, label, |ui, label| {
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(value.as_deref().unwrap_or("All"))
+            .width(150.0)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(value, None, "All");
+                for &option in options {
+                    ui.selectable_value(value, Some(option.to_string()), option);
+                }
+            })
+            .response
+            .labelled_by(label);
+    });
 }
 
 #[cfg(test)]

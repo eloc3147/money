@@ -8,8 +8,10 @@ pub mod error;
 pub mod range;
 pub mod settings;
 pub mod style;
+pub mod theme;
 pub mod transactions;
 pub mod uncategorized;
+pub mod widgets;
 
 use std::path::PathBuf;
 #[cfg(feature = "dev-mode")]
@@ -22,6 +24,8 @@ use chrono::NaiveDate;
 use eframe::egui::{self, RichText, Ui};
 use strum::{IntoStaticStr, VariantArray};
 
+use self::theme::{Palette, medium, semibold};
+use self::widgets::{GAP, card, nav_item, primary_button, secondary_button, segmented};
 use crate::config::AppConfig;
 use crate::error::ErrorReport;
 use crate::loader::{LoadHandle, Loaded, spawn_load};
@@ -113,8 +117,10 @@ pub struct MoneyApp {
     /// Optional screenshot-and-exit request.
     #[cfg(feature = "dev-mode")]
     screenshot: Option<ScreenshotRequest>,
-    /// Status message shown in the bottom bar.
+    /// Status message shown in the sidebar.
     status: Option<String>,
+    /// Whether [`theme::install`] has run on the current context.
+    theme_installed: bool,
 }
 
 impl MoneyApp {
@@ -166,6 +172,7 @@ impl MoneyApp {
             #[cfg(feature = "dev-mode")]
             screenshot,
             status: None,
+            theme_installed: false,
         }
     }
 
@@ -257,59 +264,51 @@ impl MoneyApp {
 
     /// Draw the whole UI. Also used directly by tests.
     pub fn ui(&mut self, ui: &mut Ui) {
-        self.poll_load();
         let ctx = ui.ctx().clone();
+        if !self.theme_installed {
+            // Fonts apply from the next frame; draw nothing until the Inter families exist.
+            theme::install(&ctx);
+            self.theme_installed = true;
+            ctx.request_repaint();
+            return;
+        }
+        self.poll_load();
         if self.is_loading() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
 
-        egui::Panel::top("tabs").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading(RichText::new("💰 Money").strong());
-                ui.separator();
-                for &tab in Tab::VARIANTS {
-                    let mut label: String = Into::<&'static str>::into(tab).to_string();
-                    if tab == Tab::Uncategorized && !self.data.uncategorized.is_empty() {
-                        label = format!("{label} ({})", self.data.uncategorized.len());
-                    }
-                    ui.selectable_value(&mut self.tab, tab, label);
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add_enabled(!self.is_loading(), egui::Button::new("⟳ Reload"))
-                        .on_hover_text("Re-import all statement files")
-                        .clicked()
-                    {
-                        self.reload(Some(ctx.clone()));
-                    }
-                    egui::widgets::global_theme_preference_buttons(ui);
-                });
-            });
-        });
-
-        egui::Panel::bottom("status").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                if let Some(status) = &self.status {
-                    ui.weak(status);
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.weak(self.config_path.display().to_string());
-                });
-            });
-        });
+        let p = Palette::of(ui);
+        egui::Panel::left("sidebar")
+            .exact_size(232.0)
+            .resizable(false)
+            .show_separator_line(true)
+            .frame(
+                egui::Frame::new()
+                    .fill(p.surface)
+                    .inner_margin(egui::Margin::symmetric(14, 20)),
+            )
+            .show(ui, |ui| self.sidebar(ui));
 
         let mut action = None;
-        egui::CentralPanel::default_margins().show(ui, |ui| {
-            if self.tab != Tab::Settings && !self.status_screen(ui) {
-                return;
-            }
-            match self.tab {
-                Tab::Transactions => self.transactions.ui(ui, &self.data, self.today),
-                Tab::Chart => self.chart.ui(ui, &self.data, self.today),
-                Tab::Uncategorized => action = self.uncategorized.ui(ui, &self.data, &self.config),
-                Tab::Settings => action = self.settings.ui(ui, &self.config_path),
-            }
-        });
+        egui::CentralPanel::no_frame()
+            .frame(
+                egui::Frame::new()
+                    .fill(p.canvas)
+                    .inner_margin(egui::Margin::symmetric(32, 28)),
+            )
+            .show(ui, |ui| {
+                if self.tab != Tab::Settings && !self.status_screen(ui) {
+                    return;
+                }
+                match self.tab {
+                    Tab::Transactions => self.transactions.ui(ui, &self.data, self.today),
+                    Tab::Chart => self.chart.ui(ui, &self.data, self.today),
+                    Tab::Uncategorized => {
+                        action = self.uncategorized.ui(ui, &self.data, &self.config);
+                    }
+                    Tab::Settings => action = self.settings.ui(ui, &self.config_path),
+                }
+            });
         if let Some(action) = action {
             self.perform(action, Some(ctx.clone()));
         }
@@ -318,15 +317,84 @@ impl MoneyApp {
         self.handle_screenshot(&ctx);
     }
 
+    /// The navigation sidebar: wordmark, tabs, then status, reload and theme at the bottom.
+    fn sidebar(&mut self, ui: &mut Ui) {
+        let p = Palette::of(ui);
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.add_space(12.0);
+            ui.label(RichText::new("money").font(semibold(24.0)).color(p.text));
+        });
+        ui.add_space(24.0);
+        ui.spacing_mut().item_spacing.y = 4.0;
+        for &tab in Tab::VARIANTS {
+            let badge = (tab == Tab::Uncategorized).then_some(self.data.uncategorized.len());
+            if nav_item(ui, self.tab == tab, tab.into(), badge).clicked() {
+                self.tab = tab;
+            }
+        }
+
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.spacing_mut().item_spacing.y = 10.0;
+            ui.add(
+                egui::Label::new(
+                    RichText::new(self.options.config_path.display().to_string())
+                        .font(theme::regular(11.0))
+                        .color(p.faint),
+                )
+                .truncate(),
+            )
+            .on_hover_text(self.options.config_path.display().to_string());
+            let mut preference = ui.ctx().options(|o| o.theme_preference);
+            if segmented(
+                ui,
+                &mut preference,
+                &[
+                    (egui::ThemePreference::System, "Auto"),
+                    (egui::ThemePreference::Light, "Light"),
+                    (egui::ThemePreference::Dark, "Dark"),
+                ],
+            ) {
+                ui.ctx().set_theme(preference);
+            }
+            let reload = ui.add_sized(
+                [ui.available_width(), theme::CONTROL_HEIGHT],
+                egui::Button::new(RichText::new("Reload").font(medium(14.0)).color(p.text))
+                    .fill(p.surface)
+                    .stroke(egui::Stroke::new(1.0, p.outline))
+                    .corner_radius(egui::CornerRadius::same(u8::MAX)),
+            );
+            if reload
+                .on_hover_text("Re-import all statement files")
+                .clicked()
+                && !self.is_loading()
+            {
+                self.reload(Some(ui.ctx().clone()));
+            }
+            let status = if self.is_loading() {
+                "Loading…".to_string()
+            } else {
+                self.status.clone().unwrap_or_default()
+            };
+            if !status.is_empty() {
+                ui.add(egui::Label::new(widgets::muted(ui, status)).wrap());
+            }
+        });
+    }
+
     /// Show loading / error / welcome screens. Returns true when the data views can be shown.
     fn status_screen(&mut self, ui: &mut Ui) -> bool {
         match &self.state {
             LoadState::Ready => true,
             LoadState::Loading(handle) => {
                 let status = &handle.status;
-                ui.vertical_centered(|ui| {
-                    ui.add_space(ui.available_height() * 0.3);
-                    ui.heading(status.stage().label());
+                centered_card(ui, |ui| {
+                    let p = Palette::of(ui);
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        widgets::section_title(ui, status.stage().label());
+                    });
+                    ui.add_space(8.0);
                     let found = status.import.files_found();
                     let done = status.import.files_done();
                     #[allow(clippy::cast_precision_loss)]
@@ -335,46 +403,54 @@ impl MoneyApp {
                     } else {
                         done as f32 / found as f32
                     };
-                    ui.add(
-                        egui::ProgressBar::new(fraction)
-                            .desired_width(360.0)
-                            .text(format!("{done} / {found} files")),
-                    );
-                    ui.label(format!(
-                        "{} transactions read",
-                        status.import.transactions()
+                    widgets::share_bar(ui, fraction, p.primary, ui.available_width());
+                    ui.add_space(4.0);
+                    ui.label(widgets::muted(
+                        ui,
+                        format!(
+                            "{done} of {found} files · {} transactions read",
+                            status.import.transactions()
+                        ),
                     ));
-                    ui.spinner();
                 });
                 false
             }
             LoadState::Failed(error) => {
                 let error = error.clone();
-                ui.heading("Failed to load transactions");
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    if ui.button("⟳ Retry").clicked() {
-                        self.reload(Some(ui.ctx().clone()));
-                    }
-                    if ui.button("⚙ Open settings").clicked() {
-                        self.tab = Tab::Settings;
-                    }
-                });
-                ui.add_space(8.0);
+                widgets::page_header(
+                    ui,
+                    "Failed to load transactions",
+                    Some("Fix the problem below, then retry."),
+                    |ui| {
+                        if primary_button(ui, true, "Retry").clicked() {
+                            self.reload(Some(ui.ctx().clone()));
+                        }
+                        if secondary_button(ui, true, "Open settings").clicked() {
+                            self.tab = Tab::Settings;
+                        }
+                    },
+                );
                 egui::ScrollArea::vertical()
                     .id_salt("error-scroll")
                     .show(ui, |ui| self.error_view.ui(ui, &error));
                 false
             }
             LoadState::NoConfig => {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(ui.available_height() * 0.3);
-                    ui.heading("Welcome to Money");
-                    ui.label(format!(
-                        "No config file found at {}.",
-                        self.config_path.display()
-                    ));
-                    if ui.button("⚙ Create one in Settings").clicked() {
+                centered_card(ui, |ui| {
+                    widgets::section_title(ui, "Welcome to Money");
+                    ui.add(
+                        egui::Label::new(widgets::muted(
+                            ui,
+                            format!(
+                                "No config file found at {}. Add your accounts in Settings to \
+                                 get started.",
+                                self.config_path.display()
+                            ),
+                        ))
+                        .wrap(),
+                    );
+                    ui.add_space(8.0);
+                    if primary_button(ui, true, "Create one in Settings").clicked() {
                         self.tab = Tab::Settings;
                     }
                 });
@@ -421,6 +497,19 @@ impl MoneyApp {
             });
         }
     }
+}
+
+/// A narrow card centred in the available space.
+fn centered_card(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui)) {
+    ui.vertical_centered(|ui| {
+        ui.add_space((ui.available_height() * 0.28).max(GAP));
+        let width = ui.available_width().min(440.0);
+        ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
+            card(ui, |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), add_contents);
+            });
+        });
+    });
 }
 
 impl eframe::App for MoneyApp {
