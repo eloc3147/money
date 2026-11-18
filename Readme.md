@@ -64,6 +64,10 @@ transaction_type = "CreditRefund"
 category = "Transfer"
 ignore = true                 # drop matching transactions
 patterns = ["PAYMENT THANK YOU"]
+
+# Optional: category colors (theme-glasbey | glasbey | dark24 | tab20).
+[display]
+chart_palette = "theme-glasbey"
 ```
 
 Saving from the settings editor rewrites the file (comments are not preserved) and keeps the

@@ -251,6 +251,7 @@ fn settings_edit_and_save() {
         "Transaction types",
         "Rules",
         "Budgets",
+        "Display",
         "Advanced",
         "Accounts",
     ] {
@@ -278,6 +279,47 @@ fn settings_edit_and_save() {
     let saved = money::config::AppConfig::load(&dir.path().join("config.toml")).unwrap();
     assert_eq!(saved.budget.len(), 1);
     assert!(!harness.state().settings.is_dirty());
+}
+
+#[test]
+fn palette_setting_saves_and_recolors() {
+    use money::config::ChartPalette;
+    use strum::VariantArray;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = harness(mock_app(dir.path()));
+    assert_eq!(
+        harness.state().config().display.chart_palette,
+        ChartPalette::ThemeGlasbey
+    );
+    // Pick every palette in turn (default last, so each pick is a change to save).
+    let order = ChartPalette::VARIANTS
+        .iter()
+        .copied()
+        .cycle()
+        .skip(1)
+        .take(ChartPalette::VARIANTS.len());
+    for palette in order {
+        click_button(&harness, "Settings");
+        harness.run_ok();
+        click_button(&harness, "Display");
+        harness.run_ok();
+        harness
+            .get_by_role_and_label(eframe::egui::accesskit::Role::RadioButton, palette.label())
+            .click();
+        harness.run_ok();
+        click_button(&harness, "Save and reload");
+        harness.run_ok();
+        wait_for_load(&mut harness);
+        assert_eq!(harness.state().config().display.chart_palette, palette);
+        let saved = money::config::AppConfig::load(&dir.path().join("config.toml")).unwrap();
+        assert_eq!(saved.display.chart_palette, palette);
+
+        click_button(&harness, "Spending by category");
+        harness.run_ok();
+        let name = format!("{palette:?}").to_lowercase();
+        maybe_render(&mut harness, &format!("palette-{name}"));
+    }
 }
 
 #[test]

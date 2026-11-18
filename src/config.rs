@@ -186,6 +186,87 @@ pub struct BudgetConfig {
     pub rules: Vec<BudgetRule>,
 }
 
+/// The color palette used for categories in the chart and transaction list.
+///
+/// Each palette has 20 slots; categories beyond that fold into "Other".
+#[derive(
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    VariantArray,
+    IntoStaticStr,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChartPalette {
+    /// colorcet's Glasbey selection method limited to the app theme's lightness and
+    /// saturation, with separate light and dark sets.
+    #[default]
+    #[strum(serialize = "Theme-limited Glasbey")]
+    ThemeGlasbey,
+    /// colorcet `glasbey_bw_minc_20`, reordered for stacking.
+    #[strum(serialize = "colorcet Glasbey")]
+    Glasbey,
+    /// plotly `Dark24` (first 20), reordered for stacking.
+    #[strum(serialize = "plotly Dark24")]
+    Dark24,
+    /// matplotlib `tab20`, reordered for stacking.
+    #[strum(serialize = "matplotlib tab20")]
+    Tab20,
+}
+
+impl ChartPalette {
+    /// Display name.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        self.into()
+    }
+
+    /// One line on the palette's trade-offs.
+    #[must_use]
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::ThemeGlasbey => {
+                "Most legible on both themes; separate light and dark sets, keeps the app's blue \
+                 first. 13 of 190 color pairs are close."
+            }
+            Self::Glasbey => {
+                "Most distinct (4 close pairs), but includes neon and pale colors that clash \
+                 with the theme."
+            }
+            Self::Dark24 => {
+                "Saturated and fairly distinct (22 close pairs); some very dark colors fade on \
+                 the dark theme."
+            }
+            Self::Tab20 => {
+                "Soft and familiar, but many similar colors (46 close pairs), and two greys \
+                 resemble \"Other\"."
+            }
+        }
+    }
+}
+
+/// Display preferences.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Default)]
+pub struct DisplayConfig {
+    /// Category color palette.
+    #[serde(default)]
+    pub chart_palette: ChartPalette,
+}
+
+impl DisplayConfig {
+    /// Whether every preference has its default (the section is then left out of the file).
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// The complete application configuration.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Default)]
 pub struct AppConfig {
@@ -201,6 +282,9 @@ pub struct AppConfig {
     /// Budgets, in chronological order.
     #[serde(default)]
     pub budget: Vec<BudgetConfig>,
+    /// Display preferences.
+    #[serde(default, skip_serializing_if = "DisplayConfig::is_default")]
+    pub display: DisplayConfig,
 }
 
 impl AppConfig {
@@ -401,6 +485,24 @@ rules = [{ category = "Food", limit = "500.00" }]
         let text = config.to_toml().unwrap();
         let reparsed = AppConfig::parse(&text).unwrap();
         assert_eq!(config, reparsed);
+    }
+
+    #[test]
+    fn display_section_round_trips_and_defaults() {
+        let mut config = AppConfig::parse(SAMPLE).unwrap();
+        assert_eq!(config.display.chart_palette, ChartPalette::ThemeGlasbey);
+        assert!(
+            !config.to_toml().unwrap().contains("[display]"),
+            "default display settings are not written"
+        );
+        config.display.chart_palette = ChartPalette::Dark24;
+        let text = config.to_toml().unwrap();
+        assert!(text.contains("chart_palette = \"dark24\""), "{text}");
+        assert_eq!(AppConfig::parse(&text).unwrap(), config);
+        for &palette in ChartPalette::VARIANTS {
+            assert!(!palette.label().is_empty());
+            assert!(!palette.description().is_empty());
+        }
     }
 
     #[test]
