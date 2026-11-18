@@ -17,6 +17,7 @@ use super::widgets::{
     segmented, stat_row,
 };
 use crate::analysis::{CategoryLevel, RangePreset, totals};
+use crate::config::ChartPalette;
 use crate::model::{Dataset, TransactionRecord};
 
 /// Which side of the ledger is listed.
@@ -222,7 +223,7 @@ impl TransactionsView {
     }
 
     /// Draw the view.
-    pub fn ui(&mut self, ui: &mut Ui, data: &Dataset, today: NaiveDate) {
+    pub fn ui(&mut self, ui: &mut Ui, data: &Dataset, today: NaiveDate, palette: ChartPalette) {
         let rows = self.rows(data, today);
         let summary = totals(rows.iter().map(|&i| &data.transactions[i]));
         let side: &'static str = self.filter.side.into();
@@ -273,7 +274,12 @@ impl TransactionsView {
         }
         stat_row(ui, &stats);
 
-        let colors = category_colors(data, self.filter.side.is_income(), CategoryLevel::Base);
+        let colors = category_colors(
+            data,
+            self.filter.side.is_income(),
+            CategoryLevel::Base,
+            palette,
+        );
         card_fill(ui, |ui| self.table(ui, data, &rows, &colors));
     }
 

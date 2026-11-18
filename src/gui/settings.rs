@@ -10,6 +10,7 @@ use strum::{IntoStaticStr, VariantArray};
 
 use super::Action;
 use super::range::{from_jiff, to_jiff};
+use super::style::palette_colors;
 use super::theme::{Palette, medium};
 use super::uncategorized::{enum_combo, mapping_grid};
 use super::widgets::{
@@ -17,8 +18,9 @@ use super::widgets::{
     text_button,
 };
 use crate::config::{
-    AccountConfig, AppConfig, BudgetConfig, BudgetRule, IncomeType, NameSource,
-    TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode, UserTransactionType,
+    AccountConfig, AppConfig, BudgetConfig, BudgetRule, ChartPalette, DisplayConfig, IncomeType,
+    NameSource, TransactionRuleConfig, TransactionTypeConfig, TransactionTypeMode,
+    UserTransactionType,
 };
 
 /// Sections of the editor.
@@ -34,6 +36,8 @@ pub enum Section {
     Rules,
     /// Budgets.
     Budgets,
+    /// Display preferences such as the chart palette.
+    Display,
     /// Storage and raw TOML preview.
     Advanced,
 }
@@ -121,6 +125,7 @@ impl SettingsView {
                     }
                     Section::Rules => rules_ui(ui, &mut self.draft.rule, &mut self.rule_search),
                     Section::Budgets => budgets_ui(ui, &mut self.draft.budget),
+                    Section::Display => display_ui(ui, &mut self.draft.display),
                     Section::Advanced => advanced_ui(ui, &mut self.draft),
                 });
                 ui.add_space(GAP);
@@ -427,6 +432,43 @@ fn budgets_ui(ui: &mut Ui, budgets: &mut Vec<BudgetConfig>) {
             name: format!("Budget {}", budgets.len() + 1),
             start_date: start,
             rules: Vec::new(),
+        });
+    }
+}
+
+/// Edit display preferences: the category palette, each option shown with its swatches.
+fn display_ui(ui: &mut Ui, display: &mut DisplayConfig) {
+    intro(
+        ui,
+        "Colors for categories in the spending chart and transaction list. Each palette has 20 \
+         colors; the largest categories get the first ones and the rest fold into \"Other\".",
+    );
+    let dark = ui.visuals().dark_mode;
+    let p = Palette::of(ui);
+    for (idx, &palette) in ChartPalette::VARIANTS.iter().enumerate() {
+        if idx > 0 {
+            ui.separator();
+        }
+        ui.horizontal(|ui| {
+            ui.radio_value(
+                &mut display.chart_palette,
+                palette,
+                RichText::new(palette.label())
+                    .font(medium(14.0))
+                    .color(p.text),
+            );
+        });
+        ui.indent(("palette", idx), |ui| {
+            ui.label(muted(ui, palette.description()));
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for &color in palette_colors(palette, dark) {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+                    ui.painter()
+                        .rect_filled(rect, egui::CornerRadius::same(4), color);
+                }
+            });
         });
     }
 }

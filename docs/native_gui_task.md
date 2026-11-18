@@ -24,6 +24,7 @@ Grafana" tool into a self-contained native desktop application.
 | 15 | No hand-written lists of enum values (variant arrays, name tables); derive them with a macro library | ✅ |
 | 16 | Errors from background work are returned in an easily parsable, colorless format and rendered in the GUI as a readable stack trace | ✅ |
 | 17 | Modern visual design (Wealthsimple as a rough reference) without losing any of the detail shown | ✅ |
+| 18 | Category palette with ~20 distinct colors that suit the theme, selectable in the GUI (color-blind safety not required) | ✅ |
 
 ## Design decisions
 
@@ -90,6 +91,22 @@ Grafana" tool into a self-contained native desktop application.
 - The categorical chart palette is unchanged (it was already validated for colour-vision
   deficiency). Amounts show an explicit sign; income is green, expenses use the normal ink.
 
+### Category palettes (requirement 18)
+
+- About 37 qualitative palettes from matplotlib, seaborn, plotly, colorcet (Glasbey) and Paul
+  Tol were scored with the dataviz validator's OKLab ΔE on the card surfaces (`#ffffff`,
+  `#1c1c1a`). Most stop at 6–12 colors. Of the 20-color sets, colorcet Glasbey is by far the most
+  distinct (4 of 190 pairs below ΔE 15) but has neon and pale colors; matplotlib `tab20` has 46
+  close pairs; plotly `Dark24` has 22.
+- Four options are offered (`[display] chart_palette`, Settings → Display): a theme-limited
+  Glasbey (colorcet's max-min selection restricted to the theme's lightness/chroma, separate
+  light and dark sets, default), colorcet `glasbey_bw_minc_20`, plotly `Dark24` and matplotlib
+  `tab20`. Library palettes are reordered so stacked neighbours are at least ΔE 21 apart; the
+  colors themselves are unchanged.
+- Palettes have 20 slots; categories beyond that fold into "Other". No 20-color palette keeps
+  every pair apart, so the hover tooltip and breakdown table remain the precise way to identify
+  a segment.
+
 ## Progress log
 
 - 2026-11-11 — Surveyed existing code; chose egui/eframe + sqlx/sqlite; wrote this plan.
@@ -116,6 +133,10 @@ Grafana" tool into a self-contained native desktop application.
   segmented controls, stat cards, cleaner tables and chart). GUI tests now find navigation
   buttons by role, since page titles share their names, and snapshot renders are written in
   both light and dark mode.
+
+- 2026-11-18 — Requirement 18: compared library palettes, added the four 20-color options as a
+  `[display]` config section with a Display settings page (radio buttons with swatches). A GUI
+  test selects and saves each palette.
 
 ## Testing notes
 

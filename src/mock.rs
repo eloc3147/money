@@ -389,6 +389,7 @@ fn mock_config(chequing_dir: PathBuf, visa_dir: PathBuf) -> AppConfig {
             rule(T::CreditRefund, "Transfer", true, &["PAYMENT THANK YOU"]),
         ],
         budget: Vec::new(),
+        display: crate::config::DisplayConfig::default(),
     }
 }
 

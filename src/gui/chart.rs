@@ -16,6 +16,7 @@ use super::widgets::{
 use crate::analysis::{
     Averaging, BinnedSeries, CategoryLevel, DateRange, Period, RangePreset, bin_by_category,
 };
+use crate::config::ChartPalette;
 use crate::model::Dataset;
 
 /// State of the chart view.
@@ -51,8 +52,8 @@ impl ChartView {
 
     /// Stable colors for the current side and level, ranked over the whole dataset.
     #[must_use]
-    pub fn colors(&self, data: &Dataset) -> CategoryColors {
-        category_colors(data, self.side.is_income(), self.level)
+    pub fn colors(&self, data: &Dataset, palette: ChartPalette) -> CategoryColors {
+        category_colors(data, self.side.is_income(), self.level, palette)
     }
 
     /// The series to plot, after folding and averaging.
@@ -132,7 +133,7 @@ impl ChartView {
     }
 
     /// Draw the view.
-    pub fn ui(&mut self, ui: &mut Ui, data: &Dataset, today: NaiveDate) {
+    pub fn ui(&mut self, ui: &mut Ui, data: &Dataset, today: NaiveDate, palette: ChartPalette) {
         let title = if self.side.is_income() {
             "Income by category"
         } else {
@@ -148,7 +149,7 @@ impl ChartView {
         self.side = side;
         self.controls(ui, data, today);
 
-        let colors = self.colors(data);
+        let colors = self.colors(data, palette);
         let binned = self.series(data, today, &colors);
         let totals = binned.period_totals();
         let grand_total: f64 = binned.series.iter().map(|s| s.total).sum();
@@ -403,7 +404,12 @@ fn legend(ui: &mut Ui, binned: &BinnedSeries, colors: &CategoryColors) {
 /// Colors for the categories of one side at one level, ranked by size over the whole dataset
 /// so a category keeps its color whatever range or view shows it.
 #[must_use]
-pub fn category_colors(data: &Dataset, income: bool, level: CategoryLevel) -> CategoryColors {
+pub fn category_colors(
+    data: &Dataset,
+    income: bool,
+    level: CategoryLevel,
+    palette: ChartPalette,
+) -> CategoryColors {
     let all = data.date_bounds().map_or(
         BinnedSeries {
             period: Period::Year,
@@ -420,7 +426,7 @@ pub fn category_colors(data: &Dataset, income: bool, level: CategoryLevel) -> Ca
             )
         },
     );
-    CategoryColors::new(all.names())
+    CategoryColors::new(all.names(), palette)
 }
 
 #[cfg(test)]
@@ -456,15 +462,15 @@ mod tests {
 
     #[test]
     fn folds_beyond_palette_and_keeps_colors() {
-        let data = data(10);
+        let data = data(CategoryColors::SLOTS + 2);
         let today = NaiveDate::from_ymd_opt(2024, 2, 1).unwrap();
         let mut view = ChartView::new(today);
         view.range.preset = RangePreset::AllTime;
-        let colors = view.colors(&data);
+        let colors = view.colors(&data, ChartPalette::default());
         let series = view.series(&data, today, &colors);
         assert_eq!(series.series.len(), CategoryColors::SLOTS + 1);
         assert_eq!(series.series.last().unwrap().name, OTHER_NAME);
-        assert_eq!(series.series[0].name, "C09", "largest first");
+        assert_eq!(series.series[0].name, "C21", "largest first");
 
         // Narrowing the range must not recolor the remaining categories.
         let before = colors.color("C05", false);
@@ -473,7 +479,11 @@ mod tests {
             start: NaiveDate::from_ymd_opt(2024, 1, 6).unwrap(),
             end: NaiveDate::from_ymd_opt(2024, 1, 6).unwrap(),
         };
-        assert_eq!(view.colors(&data).color("C05", false), before);
+        assert_eq!(
+            view.colors(&data, ChartPalette::default())
+                .color("C05", false),
+            before
+        );
         assert_eq!(view.series(&data, today, &colors).names(), vec!["C05"]);
     }
 
@@ -486,8 +496,11 @@ mod tests {
         view.side = Side::Income;
         view.level = CategoryLevel::Full;
         view.range.preset = RangePreset::AllTime;
-        let colors = view.colors(&data);
+        let colors = view.colors(&data, ChartPalette::default());
         assert_eq!(view.series(&data, today, &colors).names(), vec!["C00.x"]);
-        assert!(ChartView::new(today).colors(&Dataset::default()) == CategoryColors::default());
+        assert!(
+            ChartView::new(today).colors(&Dataset::default(), ChartPalette::default())
+                == CategoryColors::default()
+        );
     }
 }

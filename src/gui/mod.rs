@@ -285,8 +285,18 @@ impl MoneyApp {
                     return;
                 }
                 match self.tab {
-                    Tab::Transactions => self.transactions.ui(ui, &self.data, self.today),
-                    Tab::Chart => self.chart.ui(ui, &self.data, self.today),
+                    Tab::Transactions => self.transactions.ui(
+                        ui,
+                        &self.data,
+                        self.today,
+                        self.config.display.chart_palette,
+                    ),
+                    Tab::Chart => self.chart.ui(
+                        ui,
+                        &self.data,
+                        self.today,
+                        self.config.display.chart_palette,
+                    ),
                     Tab::Uncategorized => {
                         action = self.uncategorized.ui(ui, &self.data, &self.config);
                     }
