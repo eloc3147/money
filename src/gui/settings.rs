@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use eframe::egui::{self, RichText, Ui};
-use egui_extras::DatePickerButton;
+use egui_extras::{Column, DatePickerButton, TableBuilder};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use strum::{IntoStaticStr, VariantArray};
@@ -170,27 +170,56 @@ fn accounts_ui(ui: &mut Ui, accounts: &mut Vec<AccountConfig>) {
         "Each account's directory is searched recursively for .qfx, .ofx and .csv statements.",
     );
     let mut remove = None;
-    egui::Grid::new("accounts")
-        .num_columns(3)
-        .spacing([12.0, 10.0])
-        .show(ui, |ui| {
-            let name_header = ui.label(caption(ui, "Name"));
-            let path_header = ui.label(caption(ui, "Statement directory"));
-            ui.end_row();
+    let mut name_header = None;
+    let mut path_header = None;
+    TableBuilder::new(ui)
+        .id_salt("accounts-table")
+        .resizable(true)
+        .vscroll(false)
+        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+        .column(Column::initial(200.0).at_least(100.0).clip(true))
+        .column(
+            Column::remainder()
+                .at_least(160.0)
+                .clip(true)
+                .resizable(false),
+        )
+        .column(Column::exact(70.0).resizable(false))
+        .header(26.0, |mut header| {
+            header.col(|ui| name_header = Some(ui.label(caption(ui, "Name")).id));
+            header.col(|ui| {
+                path_header = Some(ui.label(caption(ui, "Statement directory")).id);
+            });
+            header.col(|_| {});
+        })
+        .body(|mut body| {
             for (idx, account) in accounts.iter_mut().enumerate() {
-                sized(ui, 160.0, 1, egui::TextEdit::singleline(&mut account.name))
-                    .labelled_by(name_header.id);
-                let mut path = account.source_path.to_string_lossy().into_owned();
-                if sized(ui, 420.0, 1, egui::TextEdit::singleline(&mut path))
-                    .labelled_by(path_header.id)
-                    .changed()
-                {
-                    account.source_path = path.into();
-                }
-                if remove_button(ui) {
-                    remove = Some(idx);
-                }
-                ui.end_row();
+                body.row(40.0, |mut row| {
+                    row.col(|ui| {
+                        let width = ui.available_width() - 12.0;
+                        let edit =
+                            sized(ui, width, 1, egui::TextEdit::singleline(&mut account.name));
+                        if let Some(id) = name_header {
+                            edit.labelled_by(id);
+                        }
+                    });
+                    row.col(|ui| {
+                        let width = ui.available_width() - 12.0;
+                        let mut path = account.source_path.to_string_lossy().into_owned();
+                        let edit = sized(ui, width, 1, egui::TextEdit::singleline(&mut path));
+                        if let Some(id) = path_header {
+                            edit.clone().labelled_by(id);
+                        }
+                        if edit.changed() {
+                            account.source_path = path.into();
+                        }
+                    });
+                    row.col(|ui| {
+                        if remove_button(ui) {
+                            remove = Some(idx);
+                        }
+                    });
+                });
             }
         });
     if let Some(idx) = remove {

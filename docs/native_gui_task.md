@@ -138,6 +138,14 @@ Grafana" tool into a self-contained native desktop application.
   `[display]` config section with a Display settings page (radio buttons with swatches). A GUI
   test selects and saves each palette.
 
+- 2026-11-19 — Table fix: egui_extras widens non-clipped columns to their widest content,
+  so rows with long account names shifted their amounts and pushed the table out of its card.
+  Every column in the transactions, uncategorized and accounts tables now clips (long text ends
+  in "…" with the full text on hover), and the amount column keeps clear of the scroll bar. A
+  GUI test with very long account names checks that all amounts share one right edge inside the
+  card. Columns of those three tables are resizable by dragging their dividers, and the
+  spending chart's height by dragging the gap beneath it (double-click resets).
+
 ## Testing notes
 
 - `cargo test --all-targets` runs 69 unit tests, 2 error-report tests and 8 GUI tests (no
@@ -156,6 +164,8 @@ Grafana" tool into a self-contained native desktop application.
 - Saving the config from the UI drops comments and reorders keys (`toml` serializer). A
   format-preserving writer (`toml_edit`) would fix this.
 - Budgets are stored in the database but not yet shown in any view.
+- Column widths and the chart height reset when the app restarts (they live in egui's
+  in-memory state; persisting them needs eframe's `persistence` feature).
 - All transactions are re-imported on every start and after every config change, as required
   "for now"; incremental import would need change detection on the source files.
 - The legacy `grafana/` dashboard was removed: it queried the Postgres schema, which no longer

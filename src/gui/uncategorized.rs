@@ -10,7 +10,7 @@ use super::style::money;
 use super::theme::{Palette, medium};
 use super::widgets::{
     amount_label, badge, caption, card, card_fill, field, muted, page_header, primary_button,
-    section_title,
+    section_title, truncated,
 };
 use crate::analysis::{UncategorizedGroup, group_uncategorized};
 use crate::config::{
@@ -239,13 +239,21 @@ impl UncategorizedView {
         TableBuilder::new(ui)
             .id_salt("uncategorized-table")
             .striped(true)
+            .resizable(true)
             .auto_shrink(false)
             .sense(egui::Sense::click())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::initial(180.0).at_least(120.0).clip(true))
-            .column(Column::exact(48.0))
-            .column(Column::exact(100.0))
-            .column(Column::remainder().at_least(120.0).clip(true))
+            // All columns clip so long content cannot widen them (see the transactions table);
+            // Dates takes the remaining width, the others can be dragged.
+            .column(Column::initial(180.0).at_least(100.0).clip(true))
+            .column(Column::initial(56.0).at_least(40.0).clip(true))
+            .column(Column::initial(100.0).at_least(80.0).clip(true))
+            .column(
+                Column::remainder()
+                    .at_least(100.0)
+                    .clip(true)
+                    .resizable(false),
+            )
             .header(30.0, |mut header| {
                 header.col(|ui| {
                     ui.label(caption(ui, "Name"));
@@ -302,7 +310,7 @@ impl UncategorizedView {
                         } else {
                             format!("{} – {}", long_date(group.first), long_date(group.last))
                         };
-                        ui.label(muted(ui, text));
+                        truncated(ui, muted(ui, text));
                     });
                     if row.response().clicked() {
                         self.select(group);
