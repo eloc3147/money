@@ -13,6 +13,16 @@ use super::theme::{CARD_RADIUS, CONTROL_HEIGHT, Palette, medium, regular, semibo
 /// Space between cards and page sections.
 pub const GAP: f32 = 16.0;
 
+/// Space kept free at the right of a scrolling table so the floating scroll bar never covers
+/// the last column.
+pub const SCROLL_GUTTER: f32 = 12.0;
+
+/// A single-line label that ends in "…" when it does not fit (egui shows the full text on
+/// hover).
+pub fn truncated(ui: &mut Ui, text: RichText) -> Response {
+    ui.add(egui::Label::new(text).truncate())
+}
+
 /// The frame of a card: surface fill, hairline border, soft shadow.
 pub fn card_frame(ui: &Ui) -> Frame {
     let p = Palette::of(ui);

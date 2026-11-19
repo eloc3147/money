@@ -4,7 +4,7 @@ use std::path::Path;
 
 use chrono::NaiveDate;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use money::gui::{MoneyApp, Options, Tab};
 use money::loader::{LoadStatus, load};
 use money::mock::{MockOptions, write_mock_data};
@@ -35,6 +35,50 @@ fn mock_app(dir: &Path) -> MoneyApp {
         .block_on(load(config_path, &LoadStatus::default()))
         .unwrap();
     MoneyApp::with_loaded(options, loaded, today())
+}
+
+/// Like [`mock_app`], but every third transaction belongs to an account with a very long name.
+fn long_account_app(dir: &Path) -> MoneyApp {
+    let config_path = write_mock_data(
+        dir,
+        MockOptions {
+            end: today(),
+            months: 24,
+            seed: 7,
+        },
+    )
+    .unwrap();
+    let options = LoadOptions {
+        config_path: config_path.clone(),
+        default_db_path: None,
+    };
+    let mut loaded = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(load(config_path, &LoadStatus::default()))
+        .unwrap();
+    for t in loaded
+        .dataset
+        .transactions
+        .iter_mut()
+        .filter(|t| t.id % 3 == 0)
+    {
+        t.account = "Capital One World Elite Mastercard Rewards".into();
+    }
+    MoneyApp::with_loaded(options, loaded, today())
+}
+
+/// Right edges of every signed amount label on screen.
+fn amount_right_edges(harness: &Harness<'_, MoneyApp>) -> Vec<f32> {
+    harness
+        .get_all_by_role(eframe::egui::accesskit::Role::Label)
+        .filter(|n| {
+            // Label text is exposed as the node's value.
+            n.accesskit_node()
+                .value()
+                .is_some_and(|l| l.starts_with('\u{2212}') || l.starts_with('+'))
+        })
+        .map(|n| n.rect().right())
+        .collect()
 }
 
 /// A harness around the app at a desktop-like size.
@@ -121,6 +165,36 @@ fn tabs_switch_by_clicking() {
 }
 
 #[test]
+fn table_columns_stay_aligned_with_long_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = harness(long_account_app(dir.path()));
+    for _ in 0..3 {
+        let edges = amount_right_edges(&harness);
+        assert!(edges.len() > 5, "amounts on screen");
+        let (min, max) = edges
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
+        assert!(max - min < 0.5, "amounts share one right edge: {edges:?}");
+        // Card content ends at window width - page margin (32) - card padding (20).
+        assert!(
+            max <= 1280.0 - 32.0 - 20.0,
+            "table stays inside its card: {max}"
+        );
+        harness
+            .get_all_by_role(eframe::egui::accesskit::Role::Label)
+            .find(|n| {
+                n.accesskit_node()
+                    .value()
+                    .is_some_and(|l| l.ends_with(", 2025"))
+            })
+            .unwrap()
+            .scroll_down();
+        harness.run_ok();
+    }
+    maybe_render(&mut harness, "long-accounts");
+}
+
+#[test]
 fn transactions_toggle_income_and_search() {
     let dir = tempfile::tempdir().unwrap();
     let mut harness = harness(mock_app(dir.path()));
@@ -189,6 +263,47 @@ fn chart_controls_change_grouping() {
         money::analysis::Averaging::Moving
     );
     maybe_render(&mut harness, "chart-quarter-moving");
+}
+
+#[test]
+fn chart_height_follows_drag() {
+    use eframe::egui::{Event, Modifiers, PointerButton, pos2};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = mock_app(dir.path());
+    app.tab = Tab::Chart;
+    let mut harness = harness(app);
+    let before = harness.state().chart.plot_height;
+    let start = harness
+        .get_by_role_and_label(eframe::egui::accesskit::Role::Splitter, "Resize chart")
+        .rect()
+        .center();
+    let end = pos2(start.x, start.y + 120.0);
+    let press = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    harness.event(Event::PointerMoved(start));
+    harness.event(press(start, true));
+    harness.step();
+    for i in 1..=6 {
+        #[allow(clippy::cast_precision_loss)]
+        harness.event(Event::PointerMoved(pos2(
+            start.x,
+            start.y + 20.0 * i as f32,
+        )));
+        harness.step();
+    }
+    harness.event(press(end, false));
+    harness.run_ok();
+    let after = harness.state().chart.plot_height;
+    assert!(
+        (after - before - 120.0).abs() < 1.0,
+        "plot grew with the drag: {before} -> {after}"
+    );
+    maybe_render(&mut harness, "chart-tall");
 }
 
 #[test]

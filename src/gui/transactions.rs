@@ -13,8 +13,8 @@ use super::range::{RangeSelector, long_date};
 use super::style::{CategoryColors, money};
 use super::theme::{Palette, medium};
 use super::widgets::{
-    GAP, Stat, amount_label, avatar, caption, card_fill, chip, field, muted, page_header,
-    segmented, stat_row,
+    GAP, SCROLL_GUTTER, Stat, amount_label, avatar, caption, card_fill, chip, field, muted,
+    page_header, segmented, stat_row, truncated,
 };
 use crate::analysis::{CategoryLevel, RangePreset, totals};
 use crate::config::ChartPalette;
@@ -331,15 +331,24 @@ impl TransactionsView {
         TableBuilder::new(ui)
             .id_salt("transactions-table")
             .striped(true)
-            .resizable(false)
+            .resizable(true)
             .auto_shrink(false)
             .sense(egui::Sense::hover())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::exact(110.0))
-            .column(Column::remainder().at_least(220.0).clip(true))
-            .column(Column::initial(200.0).at_least(120.0).clip(true))
-            .column(Column::initial(110.0).at_least(80.0))
-            .column(Column::exact(130.0))
+            // Every column clips: unclipped content widens its column (and shifts the cells
+            // after it), which misaligns amounts and pushes the table out of its card.
+            // Name takes the remaining width; Date, Category and Account can be dragged.
+            .column(Column::initial(110.0).at_least(70.0).clip(true))
+            .column(
+                Column::remainder()
+                    .at_least(160.0)
+                    .clip(true)
+                    .resizable(false),
+            )
+            .column(Column::initial(200.0).at_least(80.0).clip(true))
+            .column(Column::initial(150.0).at_least(60.0).clip(true))
+            // The last column is fixed: a resizable one draws a divider at the card edge.
+            .column(Column::exact(130.0).clip(true).resizable(false))
             .header(30.0, |mut header| {
                 header.col(|ui| self.header(ui, SortColumn::Date));
                 header.col(|ui| self.header(ui, SortColumn::Name));
@@ -347,6 +356,7 @@ impl TransactionsView {
                 header.col(|ui| self.header(ui, SortColumn::Account));
                 header.col(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(SCROLL_GUTTER);
                         self.header(ui, SortColumn::Amount);
                     });
                 });
@@ -360,7 +370,7 @@ impl TransactionsView {
                         faint
                     };
                     row.col(|ui| {
-                        ui.label(muted(ui, long_date(t.posted_date)));
+                        truncated(ui, muted(ui, long_date(t.posted_date)));
                     });
                     row.col(|ui| description(ui, t, color));
                     row.col(|ui| {
@@ -368,10 +378,11 @@ impl TransactionsView {
                             .on_hover_text(format!("Type: {}", t.transaction_type));
                     });
                     row.col(|ui| {
-                        ui.label(muted(ui, &t.account));
+                        truncated(ui, muted(ui, &t.account));
                     });
                     row.col(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(SCROLL_GUTTER);
                             amount_label(ui, t.amount);
                         });
                     });

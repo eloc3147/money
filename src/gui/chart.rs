@@ -20,7 +20,7 @@ use crate::config::ChartPalette;
 use crate::model::Dataset;
 
 /// State of the chart view.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ChartView {
     /// Expenses or income.
     pub side: Side,
@@ -34,6 +34,8 @@ pub struct ChartView {
     pub averaging: Averaging,
     /// Moving average window, in periods.
     pub window: usize,
+    /// Height of the plot in points, adjusted by dragging the handle beneath it.
+    pub plot_height: f32,
 }
 
 impl ChartView {
@@ -47,7 +49,21 @@ impl ChartView {
             level: CategoryLevel::Base,
             averaging: Averaging::None,
             window: 3,
+            plot_height: Self::DEFAULT_PLOT_HEIGHT,
         }
+    }
+
+    /// Plot height before any resizing.
+    pub const DEFAULT_PLOT_HEIGHT: f32 = 340.0;
+    /// Smallest and largest plot height the resize handle allows.
+    pub const PLOT_HEIGHT_RANGE: std::ops::RangeInclusive<f32> = 160.0..=1200.0;
+
+    /// Grow or shrink the plot by `delta` points, within [`Self::PLOT_HEIGHT_RANGE`].
+    pub fn resize_plot(&mut self, delta: f32) {
+        self.plot_height = (self.plot_height + delta).clamp(
+            *Self::PLOT_HEIGHT_RANGE.start(),
+            *Self::PLOT_HEIGHT_RANGE.end(),
+        );
     }
 
     /// Stable colors for the current side and level, ranked over the whole dataset.
@@ -198,15 +214,38 @@ impl ChartView {
                         legend(ui, &binned, &colors);
                     });
                     ui.add_space(8.0);
-                    self.plot(ui, &binned, &colors, 340.0);
+                    self.plot(ui, &binned, &colors, self.plot_height);
                 });
-                ui.add_space(GAP);
+                self.resize_handle(ui);
                 card(ui, |ui| {
                     section_title(ui, "Breakdown");
                     ui.add_space(4.0);
                     Self::breakdown_table(ui, &binned, &colors, grand_total);
                 });
             });
+    }
+
+    /// The gap beneath the chart card, which resizes the plot when dragged.
+    fn resize_handle(&mut self, ui: &mut Ui) {
+        let size = egui::vec2(ui.available_width(), GAP);
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::drag());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::accesskit::Role::Splitter, true, "Resize chart")
+        });
+        if response.dragged() {
+            self.resize_plot(response.drag_delta().y);
+        }
+        if response.double_clicked() {
+            self.plot_height = Self::DEFAULT_PLOT_HEIGHT;
+        }
+        let active = response.hovered() || response.dragged();
+        if active {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            let grip = egui::Rect::from_center_size(rect.center(), egui::vec2(40.0, 4.0));
+            ui.painter()
+                .rect_filled(grip, egui::CornerRadius::same(2), Palette::of(ui).faint);
+        }
+        response.on_hover_text("Drag to resize the chart; double-click to reset");
     }
 
     /// Draw the stacked bars.
@@ -485,6 +524,17 @@ mod tests {
             before
         );
         assert_eq!(view.series(&data, today, &colors).names(), vec!["C05"]);
+    }
+
+    #[test]
+    fn plot_resizes_within_range() {
+        let mut view = ChartView::new(NaiveDate::from_ymd_opt(2024, 2, 1).unwrap());
+        view.resize_plot(60.0);
+        assert!((view.plot_height - 400.0).abs() < f32::EPSILON);
+        view.resize_plot(-10_000.0);
+        assert!((view.plot_height - 160.0).abs() < f32::EPSILON);
+        view.resize_plot(10_000.0);
+        assert!((view.plot_height - 1200.0).abs() < f32::EPSILON);
     }
 
     #[test]
