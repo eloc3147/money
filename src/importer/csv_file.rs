@@ -8,22 +8,30 @@ use color_eyre::Result;
 use color_eyre::eyre::{Context, OptionExt, bail};
 use csv_async::{AsyncReader, StringRecord};
 use futures::TryStreamExt;
-use indicatif::ProgressBar;
 use rust_decimal::Decimal;
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-use crate::importer::{Transaction, TransactionImporter, TransactionReader, TransactionType};
+use crate::importer::{
+    ImportProgress, Transaction, TransactionImporter, TransactionReader, TransactionType,
+};
 
+/// One row of a CSV export.
 struct CsvTransaction {
+    /// Date the transaction posted.
     posted_date: NaiveDate,
+    /// Merchant description.
     description: String,
+    /// Bank assigned category.
     category: String,
+    /// Amount debited, if any.
     debit: Option<Decimal>,
+    /// Amount credited, if any.
     credit: Option<Decimal>,
 }
 
 impl<'a> CsvTransaction {
+    /// Convert to a [`Transaction`]; exactly one of debit or credit must be set.
     fn into_transaction(self) -> Result<Transaction<'a>> {
         let (transaction_type, amount) = match (self.debit, self.credit) {
             (Some(debit), None) => (TransactionType::Debit, -debit),
@@ -46,12 +54,19 @@ impl<'a> CsvTransaction {
     }
 }
 
+/// Reads transactions from a CSV file.
 pub struct CsvReader {
+    /// The CSV record reader.
     reader: AsyncReader<BufReader<File>>,
+    /// Column positions found in the header row.
     columns: ColumnMap,
 }
 
 impl CsvReader {
+    /// Open a CSV file and map its header columns.
+    ///
+    /// # Errors
+    /// Fails if the file cannot be opened or the header is missing or has unknown columns.
     pub async fn open(path: &Path) -> Result<Self> {
         let mut reader = AsyncReader::from_reader(BufReader::new(
             File::open(path).await.wrap_err("Failed to open file")?,
@@ -131,11 +146,10 @@ impl TransactionReader for CsvReader {
     async fn load(
         self,
         mut importer: TransactionImporter<'_, '_>,
-        progress: &ProgressBar,
+        progress: &ImportProgress,
     ) -> Result<()> {
         let mut records = self.reader.into_records();
 
-        let mut i = 0usize;
         while let Some(row) = records.try_next().await.wrap_err("Failed to read row")? {
             let transaction = self
                 .columns
@@ -146,28 +160,31 @@ impl TransactionReader for CsvReader {
 
             importer.import(transaction).await?;
 
-            if i.is_multiple_of(100) {
-                progress.inc(100);
-            }
-
-            i += 1;
+            progress.add_transaction();
         }
 
         Ok(())
     }
 }
 
+/// Index of each needed column within a row.
 struct ColumnMap {
     // transaction_date_col: usize,
+    /// Posted date column.
     posted_date_col: usize,
     // card_number_col: usize,
+    /// Description column.
     description_col: usize,
+    /// Category column.
     category_col: usize,
+    /// Debit column.
     debit_col: usize,
+    /// Credit column.
     credit_col: usize,
 }
 
 impl ColumnMap {
+    /// Extract the needed fields from a CSV row.
     fn unpack_transaction(&self, record: StringRecord) -> Result<CsvTransaction> {
         let posted_date = record
             .get(self.posted_date_col)
@@ -202,6 +219,7 @@ impl ColumnMap {
     }
 }
 
+/// Parse an amount, treating an empty cell as `None`.
 fn parse_optional_amount(value: &str) -> Result<Option<Decimal>> {
     if value.is_empty() {
         return Ok(None);

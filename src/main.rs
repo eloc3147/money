@@ -1,134 +1,86 @@
-#[deny(clippy::all, clippy::pedantic)]
-mod config;
-mod db;
-mod importer;
+//! Command line entry point: parses arguments and opens the GUI (or runs a headless import).
 
 use std::path::PathBuf;
 
 use clap::Parser;
 use color_eyre::Result;
 use color_eyre::eyre::{Context, eyre};
-use config::AppConfig;
-use console::{Emoji, style};
-use importer::categorizer::Categorizer;
-
-use crate::config::BudgetConfig;
-use crate::db::Db;
-
-async fn load_config(config_path: PathBuf) -> Result<AppConfig> {
-    tokio::task::spawn_blocking(move || AppConfig::load(&config_path))
-        .await?
-        .wrap_err("Failed to load config")
-}
-
-async fn build_budgets(db: &Db, configs: &[BudgetConfig]) -> Result<()> {
-    let mut iter = configs.iter();
-    let Some(mut previous) = iter.next() else {
-        return Ok(());
-    };
-
-    let mut handle = db.start_transaction().await?;
-    for config in iter {
-        for rule in &previous.rules {
-            handle
-                .add_budget(
-                    &previous.name,
-                    previous.start_date,
-                    Some(config.start_date),
-                    &rule.category,
-                    rule.limit,
-                )
-                .await?;
-        }
-
-        previous = config;
-    }
-
-    for rule in &previous.rules {
-        handle
-            .add_budget(
-                &previous.name,
-                previous.start_date,
-                None,
-                &rule.category,
-                rule.limit,
-            )
-            .await?;
-    }
-
-    handle.commit().await?;
-
-    Ok(())
-}
+use money::gui::{self, Options, Tab};
+use money::loader::{LoadStatus, load};
+#[cfg(feature = "dev-mode")]
+use money::mock::{MockOptions, write_mock_data};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 /// A simple expense tracking program
 struct Args {
-    /// Clear the database and re-import all transactions
+    /// Config file to use. Defaults to `config.toml` in the data directory.
     #[arg(long)]
-    clean: bool,
+    config: Option<PathBuf>,
+
+    /// Import and print a summary without opening the GUI.
+    #[arg(long)]
+    summary: bool,
+
+    /// Generate mock data into this directory and use it (overrides --config).
+    #[cfg(feature = "dev-mode")]
+    #[arg(long, value_name = "DIR")]
+    mock: Option<PathBuf>,
+
+    /// Tab to show on start.
+    #[cfg(feature = "dev-mode")]
+    #[arg(long, value_enum, default_value = "transactions")]
+    tab: Tab,
+
+    /// Save a screenshot of the window to this PNG once loaded, then exit (for testing).
+    #[cfg(feature = "dev-mode")]
+    #[arg(long, value_name = "PNG", hide = true)]
+    screenshot: Option<PathBuf>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    color_eyre::install()?;
-
-    println!(
-        "{}",
-        style(concat!("Money v", env!("CARGO_PKG_VERSION"))).white()
-    );
-
+#[ignore = "unused_mut"]
+fn main() -> Result<()> {
+    money::error::install_hook();
     let args = Args::parse();
 
-    let data_dir = dirs::data_dir()
-        .ok_or_else(|| eyre!("OS user data directory missing"))?
-        .join("money_app");
+    let mut options = Options::default();
 
-    println!("Data directory: {}\n", data_dir.to_string_lossy());
+    let data_dir = dirs::data_dir().ok_or_else(|| eyre!("OS user data directory missing"))?;
+    options.config_path = args
+        .config
+        .unwrap_or_else(|| data_dir.join("money_app").join("config.toml"));
 
-    let config_path = data_dir.join("config.toml");
-    println!(
-        "[{}] {}Loading config...",
-        style("1/5").bold().white(),
-        Emoji("📄 ", "")
-    );
-    let config = load_config(config_path)
-        .await
-        .map(|c| Box::leak(Box::new(c)))?;
+    let tab;
 
-    println!(
-        "[{}] {}Building rules...",
-        style("2/5").bold().white(),
-        Emoji("⚙️ ", "")
-    );
-    let categorizer = Categorizer::build(&config.transaction_type, &config.rule)
-        .wrap_err("Failed to load transaction rules")?;
+    cfg_select! {
+        feature = "dev-mode" => {
+            if let Some(dir) = &args.mock {
+                options.config_path = write_mock_data(dir, MockOptions::default()).wrap_err("Failed to write mock data")?;
+            }
 
-    println!(
-        "[{}] {}Updating Budgets...",
-        style("3/5").bold().white(),
-        Emoji("📊 ", "")
-    );
-    let db_pool = db::build(&config.database, args.clean)
-        .await
-        .wrap_err("Failed to setup DB")?;
+            if let Some(file) = args.screenshot.clone().take() {
+                options.screenshot = Some(file);
+            }
 
-    build_budgets(&db_pool, &config.budget).await?;
+            tab = args.tab;
+        }
+        _ => {
+            tab = Tab::Transactions
+        }
+    }
 
-    println!(
-        "[{}] {}Loading transaction files...",
-        style("4/5").bold().white(),
-        Emoji("🏦 ", ""),
-    );
+    if args.summary {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let status = LoadStatus::default();
+        let loaded = runtime.block_on(load(options.config_path, &status))?;
+        println!(
+            "Imported {} files: {} transactions, {} uncategorized",
+            status.import.files_done(),
+            loaded.dataset.transactions.len(),
+            loaded.dataset.uncategorized.len()
+        );
+        return Ok(());
+    }
 
-    importer::import_files(&db_pool, &categorizer, &config.account).await?;
-
-    println!(
-        "[{}] {}Import complete",
-        style("5/5").bold().white(),
-        Emoji("✅ ", ""),
-    );
-
-    Ok(())
+    gui::run(options, tab).wrap_err("GUI Error")
 }

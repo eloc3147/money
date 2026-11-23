@@ -2,19 +2,30 @@ use color_eyre::eyre::{Context, OptionExt, Result, bail, eyre};
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+/// Text encoding declared by the file header.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum StringEncoding {
+    /// UTF-8.
     Utf8,
+    /// Windows code page 1252.
     Windows1252,
 }
 
+/// The parsed OFX file header.
 #[derive(Debug)]
 pub struct Header {
+    /// The `OFXHEADER` version (100 for SGML, 200 for XML).
     pub ofxheader: u32,
+    /// The OFX specification version.
     pub version: u32,
+    /// Encoding of the body text.
     pub encoding: StringEncoding,
 }
 
+/// Read an OFX 1.x (SGML) `KEY:VALUE` header, up to the blank line ending it.
+///
+/// # Errors
+/// Fails on unknown, repeated or missing header fields.
 pub async fn read_sgml_header(src: &mut BufReader<File>) -> Result<Header> {
     let mut line_buf = Vec::with_capacity(32);
 
@@ -157,6 +168,10 @@ pub async fn read_sgml_header(src: &mut BufReader<File>) -> Result<Header> {
     })
 }
 
+/// Read the two processing-instruction lines of an OFX 2.x (XML) header.
+///
+/// # Errors
+/// Fails on unknown, repeated or missing header fields.
 pub async fn read_xml_header(src: &mut BufReader<File>) -> Result<Header> {
     let mut line_buf = Vec::with_capacity(128);
 
@@ -304,4 +319,102 @@ pub async fn read_xml_header(src: &mut BufReader<File>) -> Result<Header> {
         version: version.ok_or_eyre("Header 'VERSION' missing")?,
         encoding: encoding.ok_or_eyre("XML encoding missing")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn sgml(text: &str) -> Result<Header> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("h.qfx");
+        std::fs::write(&path, text)?;
+        read_sgml_header(&mut BufReader::new(File::open(&path).await?)).await
+    }
+
+    async fn xml(text: &str) -> Result<Header> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("h.qfx");
+        std::fs::write(&path, text)?;
+        read_xml_header(&mut BufReader::new(File::open(&path).await?)).await
+    }
+
+    const SGML: &str = "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:USASCII\n\
+        CHARSET:1252\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n";
+    const XML: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+        <?OFX OFXHEADER=\"200\" VERSION=\"202\" SECURITY=\"NONE\" OLDFILEUID=\"NONE\" NEWFILEUID=\"NONE\"?>\n";
+
+    #[tokio::test]
+    async fn reads_valid_headers() {
+        let h = sgml(SGML).await.unwrap();
+        assert_eq!(
+            (h.ofxheader, h.version, h.encoding),
+            (100, 102, StringEncoding::Windows1252)
+        );
+        let h = xml(XML).await.unwrap();
+        assert_eq!(
+            (h.ofxheader, h.version, h.encoding),
+            (200, 202, StringEncoding::Utf8)
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_bad_sgml_headers() {
+        for (from, to) in [
+            ("DATA:OFXSGML", "DATA:XML"),
+            ("SECURITY:NONE", "SECURITY:TYPE2"),
+            ("ENCODING:USASCII", "ENCODING:UTF8"),
+            ("CHARSET:1252", "CHARSET:8859"),
+            ("COMPRESSION:NONE", "COMPRESSION:ZIP"),
+            ("OLDFILEUID:NONE", "OLDFILEUID:1"),
+            ("NEWFILEUID:NONE", "NEWFILEUID:1"),
+            ("VERSION:102", "VERSION:x"),
+            ("OFXHEADER:100", "OFXHEADER:x"),
+            ("OFXHEADER:100", "OFXHEADER:100\nOFXHEADER:100"),
+            ("VERSION:102", "VERSION:102\nVERSION:102"),
+            ("SECURITY:NONE", "SECURITY:NONE\nSECURITY:NONE"),
+            ("DATA:OFXSGML", "DATA:OFXSGML\nDATA:OFXSGML"),
+            ("SECURITY:NONE\n", ""),
+            ("NEWFILEUID:NONE\n", ""),
+            ("OLDFILEUID:NONE\n", ""),
+            ("VERSION:102\n", ""),
+            ("CHARSET:1252", "NOCOLON"),
+            ("CHARSET:1252", "UNKNOWN:1"),
+        ] {
+            assert!(
+                sgml(&SGML.replacen(from, to, 1)).await.is_err(),
+                "{from} -> {to}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_bad_xml_headers() {
+        for (from, to) in [
+            ("version=\"1.0\"", "version=\"1.1\""),
+            ("encoding=\"utf-8\"", "encoding=\"latin1\""),
+            ("encoding=\"utf-8\"", "standalone=\"yes\""),
+            ("encoding=\"utf-8\"", "encoding=utf-8"),
+            ("<?xml", "<xml"),
+            ("?>\n<?OFX", "\n<?OFX"),
+            ("<?OFX", "<OFX"),
+            ("SECURITY=\"NONE\"", "SECURITY=\"TYPE1\""),
+            ("SECURITY=\"NONE\" ", ""),
+            ("OLDFILEUID=\"NONE\" ", ""),
+            ("NEWFILEUID=\"NONE\"", ""),
+            ("OLDFILEUID=\"NONE\"", "OLDFILEUID=\"1\""),
+            ("NEWFILEUID=\"NONE\"", "NEWFILEUID=\"1\""),
+            ("VERSION=\"202\"", "VERSION=\"x\""),
+            ("OFXHEADER=\"200\"", "OFXHEADER=\"x\""),
+            ("OFXHEADER=\"200\"", "OFXHEADER=\"200\" OFXHEADER=\"200\""),
+            ("VERSION=\"202\"", "VERSION=\"202\" VERSION=\"202\""),
+            ("VERSION=\"202\"", "OTHER=\"1\""),
+            ("VERSION=\"202\"", "VERSION=\"202\"=x"),
+        ] {
+            assert!(
+                xml(&XML.replacen(from, to, 1)).await.is_err(),
+                "{from} -> {to}"
+            );
+        }
+    }
 }
